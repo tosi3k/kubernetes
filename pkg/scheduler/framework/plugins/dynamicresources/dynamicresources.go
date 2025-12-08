@@ -439,15 +439,7 @@ func (pl *DynamicResources) PreFilter(ctx context.Context, state fwk.CycleState,
 			return nil, statusUnschedulable(logger, "resourceclaim in use", "pod", klog.KObj(pod), "resourceclaim", klog.KObj(claim))
 		}
 
-		if claim.Status.Allocation != nil {
-			if claim.Status.Allocation.NodeSelector != nil {
-				nodeSelector, err := nodeaffinity.NewNodeSelector(claim.Status.Allocation.NodeSelector)
-				if err != nil {
-					return nil, statusError(logger, err)
-				}
-				s.informationsForClaim[index].availableOnNodes = nodeSelector
-			}
-		} else {
+		if claim.Status.Allocation == nil {
 			numClaimsToAllocate++
 
 			// Allocation in flight? Better wait for that
@@ -494,6 +486,15 @@ func (pl *DynamicResources) PreFilter(ctx context.Context, state fwk.CycleState,
 					return nil, statusUnschedulable(logger, fmt.Sprintf("resource claim %s, request %s: unknown request type", klog.KObj(claim), request.Name))
 				}
 			}
+			continue
+		}
+
+		if claim.Status.Allocation.NodeSelector != nil {
+			nodeSelector, err := nodeaffinity.NewNodeSelector(claim.Status.Allocation.NodeSelector)
+			if err != nil {
+				return nil, statusError(logger, err)
+			}
+			s.informationsForClaim[index].availableOnNodes = nodeSelector
 		}
 	}
 

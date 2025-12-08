@@ -316,19 +316,22 @@ func New(_ context.Context, plArgs runtime.Object, h fwk.Handle, fts feature.Fea
 		handle:                    h,
 		enableSchedulingQueueHint: fts.EnableSchedulingQueueHint,
 	}
-	if args.AddedAffinity != nil {
-		if ns := args.AddedAffinity.RequiredDuringSchedulingIgnoredDuringExecution; ns != nil {
-			pl.addedNodeSelector, err = nodeaffinity.NewNodeSelector(ns)
-			if err != nil {
-				return nil, fmt.Errorf("parsing addedAffinity.requiredDuringSchedulingIgnoredDuringExecution: %w", err)
-			}
+	if args.AddedAffinity == nil {
+		return pl, nil
+	}
+
+	if ns := args.AddedAffinity.RequiredDuringSchedulingIgnoredDuringExecution; ns != nil {
+		pl.addedNodeSelector, err = nodeaffinity.NewNodeSelector(ns)
+		if err != nil {
+			return nil, fmt.Errorf("parsing addedAffinity.requiredDuringSchedulingIgnoredDuringExecution: %w", err)
 		}
-		// TODO: parse requiredDuringSchedulingRequiredDuringExecution when it gets added to the API.
-		if terms := args.AddedAffinity.PreferredDuringSchedulingIgnoredDuringExecution; len(terms) != 0 {
-			pl.addedPrefSchedTerms, err = nodeaffinity.NewPreferredSchedulingTerms(terms)
-			if err != nil {
-				return nil, fmt.Errorf("parsing addedAffinity.preferredDuringSchedulingIgnoredDuringExecution: %w", err)
-			}
+	}
+	// TODO: parse requiredDuringSchedulingRequiredDuringExecution when it gets added to the API.
+	if len(args.AddedAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 0 {
+		terms := args.AddedAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+		pl.addedPrefSchedTerms, err = nodeaffinity.NewPreferredSchedulingTerms(terms)
+		if err != nil {
+			return nil, fmt.Errorf("parsing addedAffinity.preferredDuringSchedulingIgnoredDuringExecution: %w", err)
 		}
 	}
 	return pl, nil

@@ -158,33 +158,32 @@ type nodeAffinitySignerResult struct {
 }
 
 func NodeAffinitySigner(pod *v1.Pod) (any, error) {
-	if pod.Spec.Affinity != nil {
-		if pod.Spec.Affinity.NodeAffinity != nil {
-			n := pod.Spec.Affinity.NodeAffinity
-			pref := []string{}
-			var err error
-			if n.PreferredDuringSchedulingIgnoredDuringExecution != nil {
-				pref, err = PreferredSchedulingTermSigner(n.PreferredDuringSchedulingIgnoredDuringExecution)
-				if err != nil {
-					return nil, err
-				}
-			}
+	if pod.Spec.Affinity == nil || pod.Spec.Affinity.NodeAffinity == nil {
+		return nil, nil
+	}
 
-			req := []string{}
-			if n.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-				req, err = NodeSelectorTermsSigner(n.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			return nodeAffinitySignerResult{
-				Required:  req,
-				Preferred: pref,
-			}, nil
+	n := pod.Spec.Affinity.NodeAffinity
+	pref := []string{}
+	var err error
+	if n.PreferredDuringSchedulingIgnoredDuringExecution != nil {
+		pref, err = PreferredSchedulingTermSigner(n.PreferredDuringSchedulingIgnoredDuringExecution)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return nil, nil
+
+	req := []string{}
+	if n.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		req, err = NodeSelectorTermsSigner(n.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return nodeAffinitySignerResult{
+		Required:  req,
+		Preferred: pref,
+	}, nil
 }
 
 func TolerationsSigner(pod *v1.Pod) any {

@@ -175,14 +175,14 @@ func (h *Heap[T]) Peek() (T, bool) {
 // Pop returns the head of the heap and removes it.
 func (h *Heap[T]) Pop() (T, error) {
 	obj := heap.Pop(h.data)
-	if obj != nil {
-		if h.metricRecorder != nil {
-			h.metricRecorder.Dec()
-		}
-		return obj.(T), nil
+	if obj == nil {
+		var zero T
+		return zero, fmt.Errorf("heap is empty")
 	}
-	var zero T
-	return zero, fmt.Errorf("heap is empty")
+	if h.metricRecorder != nil {
+		h.metricRecorder.Dec()
+	}
+	return obj.(T), nil
 }
 
 // Get returns the requested item, or sets exists=false.
