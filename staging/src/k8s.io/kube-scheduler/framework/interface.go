@@ -362,6 +362,8 @@ func (p *PreFilterResult) Merge(in *PreFilterResult) *PreFilterResult {
 // PostFilterResult wraps needed info for scheduler framework to act upon PostFilter phase.
 type PostFilterResult struct {
 	*NominatingInfo
+	// Victims are the pods that were preempted to make room for the preemptor pod.
+	Victims []*v1.Pod
 }
 
 // Plugin is the parent type for all the scheduling framework plugins.

@@ -277,11 +277,12 @@ type Framework interface {
 	Close() error
 }
 
-func NewPostFilterResultWithNominatedNode(name string) *fwk.PostFilterResult {
+func NewPostFilterResult(nodeName string, pods []*v1.Pod) *fwk.PostFilterResult {
 	return &fwk.PostFilterResult{
 		NominatingInfo: &fwk.NominatingInfo{
-			NominatedNodeName: name,
+			NominatedNodeName: nodeName,
 			NominatingMode:    fwk.ModeOverride,
 		},
+		Victims: pods,
 	}
 }
