@@ -17,6 +17,7 @@ limitations under the License.
 package podgroup
 
 import (
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,43 +63,51 @@ func testDeclarativeValidate(t *testing.T, apiVersion string) {
 		// instead of checking minimum constraint and returning Invalid error.
 		"gang minCount zero": {
 			input:        mkValidPodGroup(setPodGroupMinCount(0)),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "schedulingPolicy", "gang", "minCount"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "schedulingPolicy", "gang", "minCount"), "")},
 		},
 		"gang minCount negative": {
 			input:        mkValidPodGroup(setPodGroupMinCount(-1)),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy", "gang", "minCount"), -1, "").WithOrigin("minimum").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy", "gang", "minCount"), -1, "").WithOrigin("minimum")},
 		},
 		"no podGroupTemplateRef": {
 			input:        mkValidPodGroup(unsetPodGroupTemplateRef()),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef"), "")},
 		},
 		"empty podGroupTemplateRef": {
 			input:        mkValidPodGroup(setEmptyPodGroupTemplateRef()),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef"), "", "must specify one of: `workload`").WithOrigin("union").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef"), "", "must specify one of: `workload`").WithOrigin("union")},
 		},
 		"podGroupTemplateRef with empty template name": {
 			input:        mkValidPodGroup(setPodGroupTemplateRef("", "workload")),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), "")},
 		},
 		"podGroupTemplateRef invalid template name": {
 			input:        mkValidPodGroup(setPodGroupTemplateRef("temp/late", "workload")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), nil, "").WithOrigin("format=k8s-short-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), nil, "").WithOrigin("format=k8s-short-name")},
 		},
 		"podGroupTemplateRef with empty workload name": {
 			input:        mkValidPodGroup(setPodGroupTemplateRef("template", "")),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), "")},
 		},
 		"podGroupTemplateRef invalid workload name": {
 			input:        mkValidPodGroup(setPodGroupTemplateRef("template", "work/load")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), nil, "").WithOrigin("format=k8s-short-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), nil, "").WithOrigin("format=k8s-short-name")},
+		},
+		"podGroupTemplateRef too long workload name": {
+			input:        mkValidPodGroup(setPodGroupTemplateRef("template", strings.Repeat("g", 254))),
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), nil, "").WithOrigin("format=k8s-short-name")},
+		},
+		"podGroupTemplateRef too long template name": {
+			input:        mkValidPodGroup(setPodGroupTemplateRef(strings.Repeat("g", 254), "workload")),
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), nil, "").WithOrigin("format=k8s-short-name")},
 		},
 		"policy with neither basic nor gang": {
 			input:        mkValidPodGroup(clearPodGroupPolicy()),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy"), nil, "").WithOrigin("union").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy"), nil, "").WithOrigin("union")},
 		},
 		"policy with both basic and gang": {
 			input:        mkValidPodGroup(setBothPolicies()),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy"), nil, "").WithOrigin("union").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "schedulingPolicy"), nil, "").WithOrigin("union")},
 		},
 	}
 	for k, tc := range testCases {
@@ -147,7 +156,7 @@ func testDeclarativeValidateUpdate(t *testing.T, apiVersion string) {
 			oldObj:    mkValidPodGroup(setResourceVersion("1")),
 			updateObj: mkValidPodGroup(setResourceVersion("1"), unsetPodGroupTemplateRef()),
 			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplateRef"), "").MarkAlpha(),
+				field.Required(field.NewPath("spec", "podGroupTemplateRef"), ""),
 				field.Invalid(field.NewPath("spec", "podGroupTemplateRef"), nil, "field is immutable").WithOrigin("immutable").MarkAlpha(),
 			},
 		},
