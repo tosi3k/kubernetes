@@ -17,7 +17,6 @@ limitations under the License.
 package validation
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -189,9 +188,6 @@ func TestValidateWorkload(t *testing.T) {
 		"no controllerRef": mkWorkload(func(w *scheduling.Workload) {
 			w.Spec.ControllerRef = nil
 		}),
-		"no controllerRef apiGroup": mkWorkload(func(w *scheduling.Workload) {
-			w.Spec.ControllerRef.APIGroup = ""
-		}),
 	}
 	for name, workload := range successCases {
 		errs := ValidateWorkload(workload)
@@ -252,154 +248,6 @@ func TestValidateWorkload(t *testing.T) {
 				field.Invalid(field.NewPath("metadata", "namespace"), strings.Repeat("n", 64), "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),
 			},
 		},
-		"too long controllerRef apiGroup": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.APIGroup = strings.Repeat("g", 254)
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "controllerRef", "apiGroup"), strings.Repeat("n", 64), "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')").MarkCoveredByDeclarative(),
-			},
-		},
-		"no pod group name": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[0].Name = ""
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplates").Index(0).Child("name"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"two policies": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[0].SchedulingPolicy.Gang = &scheduling.GangSchedulingPolicy{
-					MinCount: 2,
-				}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), "{`basic`, `gang`}", "exactly one of `basic`, `gang` is required, but multiple fields are set").MarkCoveredByDeclarative(),
-			},
-		},
-		"zero min count in gang": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[1].SchedulingPolicy.Gang.MinCount = 0
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplates").Index(1).Child("schedulingPolicy", "gang", "minCount"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"negative min count in gang": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[1].SchedulingPolicy.Gang.MinCount = -1
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(1).Child("schedulingPolicy", "gang", "minCount"), int64(-1), "must be greater than zero").WithOrigin("minimum").MarkCoveredByDeclarative(),
-			},
-		},
-		"two pod groups with the same name": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[1].Name = w.Spec.PodGroupTemplates[0].Name
-			}),
-			expectedErrs: field.ErrorList{
-				field.Duplicate(field.NewPath("spec", "podGroupTemplates").Index(1), scheduling.PodGroupTemplate{Name: "group1", SchedulingPolicy: scheduling.PodGroupSchedulingPolicy{Gang: &scheduling.GangSchedulingPolicy{MinCount: 1}}}).MarkCoveredByDeclarative(),
-			},
-		},
-		"invalid controllerRef apiGroup": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.APIGroup = ".group"
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "controllerRef", "apiGroup"), ".group", "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')").MarkCoveredByDeclarative(),
-			},
-		},
-		"no controllerRef kind": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.Kind = ""
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "controllerRef", "kind"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"invalid controllerRef kind": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.Kind = "/foo"
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "controllerRef", "kind"), "/foo", "must not contain '/'").MarkCoveredByDeclarative(),
-			},
-		},
-		"no controllerRef name": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.Name = ""
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "controllerRef", "name"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"invalid controllerRef name": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.ControllerRef.Name = "/baz"
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "controllerRef", "name"), "/baz", "must not contain '/'").WithOrigin("format=k8s-short-name").MarkCoveredByDeclarative(),
-			},
-		},
-		"no pod groups": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates = nil
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplates"), "must have at least one item").MarkCoveredByDeclarative(),
-			},
-		},
-		"too many pod group templates": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates = nil
-				for i := range scheduling.WorkloadMaxPodGroupTemplates + 1 {
-					w.Spec.PodGroupTemplates = append(w.Spec.PodGroupTemplates, scheduling.PodGroupTemplate{
-						Name: fmt.Sprintf("group-%v", i),
-						SchedulingPolicy: scheduling.PodGroupSchedulingPolicy{
-							Basic: &scheduling.BasicSchedulingPolicy{},
-						},
-					})
-				}
-			}),
-			expectedErrs: field.ErrorList{
-				field.TooMany(field.NewPath("spec", "podGroupTemplates"), scheduling.WorkloadMaxPodGroupTemplates+1, scheduling.WorkloadMaxPodGroupTemplates).WithOrigin("maxItems").MarkCoveredByDeclarative(),
-			},
-		},
-		"duplicate pod group names": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[1].Name = w.Spec.PodGroupTemplates[0].Name
-			}),
-			expectedErrs: field.ErrorList{
-				field.Duplicate(field.NewPath("spec", "podGroupTemplates").Index(1), scheduling.PodGroupTemplate{Name: "group1", SchedulingPolicy: scheduling.PodGroupSchedulingPolicy{Gang: &scheduling.GangSchedulingPolicy{MinCount: 1}}}).MarkCoveredByDeclarative(),
-			},
-		},
-		"no policy set": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[0].SchedulingPolicy = scheduling.PodGroupSchedulingPolicy{}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), "", "must specify one of: `basic`, `gang`").MarkCoveredByDeclarative(),
-			},
-		},
-		"multiple policies set": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[0].SchedulingPolicy.Gang = &scheduling.GangSchedulingPolicy{
-					MinCount: 2,
-				}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), "{`basic`, `gang`}", "exactly one of `basic`, `gang` is required, but multiple fields are set").MarkCoveredByDeclarative(),
-			},
-		},
-		"negative minCount in gang": {
-			workload: mkWorkload(func(w *scheduling.Workload) {
-				w.Spec.PodGroupTemplates[1].SchedulingPolicy.Gang.MinCount = -1
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(1).Child("schedulingPolicy", "gang", "minCount"), int64(-1), "must be greater than zero").WithOrigin("minimum").MarkCoveredByDeclarative(),
-			},
-		},
 	}
 
 	for name, tc := range failureCases {
@@ -415,14 +263,6 @@ func TestValidateWorkload(t *testing.T) {
 			}
 			matcher := field.ErrorMatcher{}.ByType().ByField()
 			matcher.Test(t, tc.expectedErrs, errs)
-
-			for i, err := range errs {
-				expectedErr := tc.expectedErrs[i]
-				if err.CoveredByDeclarative != expectedErr.CoveredByDeclarative {
-					t.Errorf("Error %d: expected CoveredByDeclarative=%v, got %v for error: %v",
-						i, expectedErr.CoveredByDeclarative, err.CoveredByDeclarative, err)
-				}
-			}
 		})
 	}
 }
@@ -554,11 +394,6 @@ func mkWorkload(tweaks ...func(w *scheduling.Workload)) *scheduling.Workload {
 func TestValidatePodGroup(t *testing.T) {
 	successCases := map[string]*scheduling.PodGroup{
 		"gang policy": mkPodGroup(),
-		"basic policy": mkPodGroup(func(pg *scheduling.PodGroup) {
-			pg.Spec.SchedulingPolicy = scheduling.PodGroupSchedulingPolicy{
-				Basic: &scheduling.BasicSchedulingPolicy{},
-			}
-		}),
 	}
 	for name, podGroup := range successCases {
 		errs := ValidatePodGroup(podGroup)
@@ -619,102 +454,6 @@ func TestValidatePodGroup(t *testing.T) {
 				field.Invalid(field.NewPath("metadata", "namespace"), strings.Repeat("n", 64), "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),
 			},
 		},
-		"no template ref": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef = nil
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplateRef"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"empty template ref": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef = &scheduling.PodGroupTemplateReference{}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec").Child("podGroupTemplateRef"), "", "must specify one of: `workload`").MarkCoveredByDeclarative(),
-			},
-		},
-		"zero min count in gang": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.SchedulingPolicy.Gang.MinCount = 0
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec").Child("schedulingPolicy", "gang", "minCount"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"negative minCount in gang": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.SchedulingPolicy.Gang.MinCount = -1
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec").Child("schedulingPolicy", "gang", "minCount"), int64(-1), "must be greater than zero").WithOrigin("minimum").MarkCoveredByDeclarative(),
-			},
-		},
-		"multiple policies set": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.SchedulingPolicy.Basic = &scheduling.BasicSchedulingPolicy{}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec").Child("schedulingPolicy"), "{`basic`, `gang`}", "exactly one of `basic`, `gang` is required, but multiple fields are set").MarkCoveredByDeclarative(),
-			},
-		},
-		"no policy set": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.SchedulingPolicy = scheduling.PodGroupSchedulingPolicy{}
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec").Child("schedulingPolicy"), "", "must specify one of: `basic`, `gang`").MarkCoveredByDeclarative(),
-			},
-		},
-		"too long workloadPodGroupTemplateRef workload name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.WorkloadName = strings.Repeat("g", 254)
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), strings.Repeat("g", 254), "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')").MarkCoveredByDeclarative(),
-			},
-		},
-		"invalid workloadPodGroupTemplateRef workload name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.WorkloadName = ".workload"
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), ".workload", "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')").MarkCoveredByDeclarative(),
-			},
-		},
-		"no workloadPodGroupTemplateRef workload name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.WorkloadName = ""
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "workloadName"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"too long workloadPodGroupTemplateRef template name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.PodGroupTemplateName = strings.Repeat("g", 254)
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), strings.Repeat("g", 254), "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')").MarkCoveredByDeclarative(),
-			},
-		},
-		"no workloadPodGroupTemplateRef template name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.PodGroupTemplateName = ""
-			}),
-			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), "").MarkCoveredByDeclarative(),
-			},
-		},
-		"invalid workloadPodGroupTemplateRef template name": {
-			podGroup: mkPodGroup(func(pg *scheduling.PodGroup) {
-				pg.Spec.PodGroupTemplateRef.Workload.PodGroupTemplateName = "/baz"
-			}),
-			expectedErrs: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "podGroupTemplateRef", "workload", "podGroupTemplateName"), "/baz", "must not contain '/'").WithOrigin("format=k8s-short-name").MarkCoveredByDeclarative(),
-			},
-		},
 	}
 
 	for name, tc := range failureCases {
@@ -730,14 +469,6 @@ func TestValidatePodGroup(t *testing.T) {
 			}
 			matcher := field.ErrorMatcher{}.ByType().ByField()
 			matcher.Test(t, tc.expectedErrs, errs)
-
-			for i, err := range errs {
-				expectedErr := tc.expectedErrs[i]
-				if err.CoveredByDeclarative != expectedErr.CoveredByDeclarative {
-					t.Errorf("Error %d: expected CoveredByDeclarative=%v, got %v for error: %v",
-						i, expectedErr.CoveredByDeclarative, err.CoveredByDeclarative, err)
-				}
-			}
 		})
 	}
 }

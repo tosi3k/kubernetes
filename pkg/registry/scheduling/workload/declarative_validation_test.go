@@ -18,6 +18,7 @@ package workload
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,33 +58,33 @@ func testDeclarativeValidate(t *testing.T, apiVersion string) {
 		},
 		"empty podGroupTemplates": {
 			input:        mkValidWorkload(clearPodGroupTemplates()),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates"), "must have at least one item").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates"), "must have at least one item")},
 		},
 		"too many podGroupTemplates": {
 			input:        mkValidWorkload(setManyPodGroupTemplates(scheduling.WorkloadMaxPodGroupTemplates + 1)),
-			expectedErrs: field.ErrorList{field.TooMany(field.NewPath("spec", "podGroupTemplates"), scheduling.WorkloadMaxPodGroupTemplates+1, scheduling.WorkloadMaxPodGroupTemplates).WithOrigin("maxItems").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.TooMany(field.NewPath("spec", "podGroupTemplates"), scheduling.WorkloadMaxPodGroupTemplates+1, scheduling.WorkloadMaxPodGroupTemplates).WithOrigin("maxItems")},
 		},
 		"empty podGroupTemplate name": {
 			input:        mkValidWorkload(setPodGroupName(0, "")),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates").Index(0).Child("name"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates").Index(0).Child("name"), "")},
 		},
 		"invalid podGroupTemplate name": {
 			input:        mkValidWorkload(setPodGroupName(0, "Invalid_Name")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("name"), nil, "").WithOrigin("format=k8s-short-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("name"), nil, "").WithOrigin("format=k8s-short-name")},
 		},
 		"duplicate podGroupTemplate names": {
 			input:        mkValidWorkload(addPodGroupTemplate("main")),
-			expectedErrs: field.ErrorList{field.Duplicate(field.NewPath("spec", "podGroupTemplates").Index(1), nil).MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Duplicate(field.NewPath("spec", "podGroupTemplates").Index(1), nil)},
 		},
 		// Declarative validation treats 0 as "missing" and returns Required error
 		// instead of checking minimum constraint and returning Invalid error.
 		"gang minCount zero": {
 			input:        mkValidWorkload(setPodGroupMinCount(0, 0)),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy", "gang", "minCount"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy", "gang", "minCount"), "")},
 		},
 		"gang minCount negative": {
 			input:        mkValidWorkload(setPodGroupMinCount(0, -1)),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy", "gang", "minCount"), nil, "").WithOrigin("minimum").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy", "gang", "minCount"), nil, "").WithOrigin("minimum")},
 		},
 		"valid with controllerRef": {
 			input: mkValidWorkload(setControllerRef("apps", "Deployment", "my-deployment")),
@@ -93,39 +94,43 @@ func testDeclarativeValidate(t *testing.T, apiVersion string) {
 		},
 		"controllerRef invalid APIGroup": {
 			input:        mkValidWorkload(setControllerRef("invalid_api_group", "Deployment", "my-deployment")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "apiGroup"), nil, "").WithOrigin("format=k8s-long-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "apiGroup"), nil, "").WithOrigin("format=k8s-long-name")},
+		},
+		"controllerRef too long APIGroup": {
+			input:        mkValidWorkload(setControllerRef(strings.Repeat("g", 254), "Deployment", "my-deployment")),
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "apiGroup"), nil, "").WithOrigin("format=k8s-long-name")},
 		},
 		"controllerRef missing kind": {
 			input:        mkValidWorkload(setControllerRef("apps", "", "my-deployment")),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "controllerRef", "kind"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "controllerRef", "kind"), "")},
 		},
 		"controllerRef invalid kind with slash": {
 			input:        mkValidWorkload(setControllerRef("apps", "Deploy/ment", "my-deployment")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "kind"), nil, "").WithOrigin("format=k8s-path-segment-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "kind"), nil, "").WithOrigin("format=k8s-path-segment-name")},
 		},
 		"controllerRef missing name": {
 			input:        mkValidWorkload(setControllerRef("apps", "Deployment", "")),
-			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "controllerRef", "name"), "").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Required(field.NewPath("spec", "controllerRef", "name"), "")},
 		},
 		"controllerRef invalid name": {
 			input:        mkValidWorkload(setControllerRef("apps", "Deployment", "/invalid-name")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "name"), nil, "").WithOrigin("format=k8s-path-segment-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "name"), nil, "").WithOrigin("format=k8s-path-segment-name")},
 		},
 		"controllerRef invalid kind with percent": {
 			input:        mkValidWorkload(setControllerRef("apps", "Deploy%ment", "my-deployment")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "kind"), nil, "").WithOrigin("format=k8s-path-segment-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "kind"), nil, "").WithOrigin("format=k8s-path-segment-name")},
 		},
 		"controllerRef invalid name with percent": {
 			input:        mkValidWorkload(setControllerRef("apps", "Deployment", "my%deployment")),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "name"), nil, "").WithOrigin("format=k8s-path-segment-name").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "controllerRef", "name"), nil, "").WithOrigin("format=k8s-path-segment-name")},
 		},
 		"policy with neither basic nor gang": {
 			input:        mkValidWorkload(clearPodGroupPolicy(0)),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), nil, "").WithOrigin("union").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), nil, "").WithOrigin("union")},
 		},
 		"policy with both basic and gang": {
 			input:        mkValidWorkload(setBothPolicies(0)),
-			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), nil, "").WithOrigin("union").MarkAlpha()},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec", "podGroupTemplates").Index(0).Child("schedulingPolicy"), nil, "").WithOrigin("union")},
 		},
 		"valid with basic policy": {
 			input: mkValidWorkload(setBasicPolicy(0)),
@@ -169,7 +174,7 @@ func testDeclarativeValidateUpdate(t *testing.T, apiVersion string) {
 			oldObj:    mkValidWorkload(setResourceVersion("1")),
 			updateObj: mkValidWorkload(setResourceVersion("1"), setEmptyPodGroupTemplates()),
 			expectedErrs: field.ErrorList{
-				field.Required(field.NewPath("spec", "podGroupTemplates"), "must have at least one item").MarkAlpha(),
+				field.Required(field.NewPath("spec", "podGroupTemplates"), "must have at least one item"),
 				field.Invalid(field.NewPath("spec", "podGroupTemplates"), []scheduling.PodGroupTemplate{}, "field is immutable").WithOrigin("immutable").MarkAlpha(),
 			},
 		},
@@ -177,7 +182,7 @@ func testDeclarativeValidateUpdate(t *testing.T, apiVersion string) {
 			oldObj:    mkValidWorkload(setResourceVersion("1")),
 			updateObj: mkValidWorkload(setResourceVersion("1"), setManyPodGroupTemplates(scheduling.WorkloadMaxPodGroupTemplates+1)),
 			expectedErrs: field.ErrorList{
-				field.TooMany(field.NewPath("spec", "podGroupTemplates"), scheduling.WorkloadMaxPodGroupTemplates+1, scheduling.WorkloadMaxPodGroupTemplates).WithOrigin("maxItems").MarkAlpha(),
+				field.TooMany(field.NewPath("spec", "podGroupTemplates"), scheduling.WorkloadMaxPodGroupTemplates+1, scheduling.WorkloadMaxPodGroupTemplates).WithOrigin("maxItems"),
 				field.Invalid(field.NewPath("spec", "podGroupTemplates"), nil, "field is immutable").WithOrigin("immutable").MarkAlpha(),
 			},
 		},
