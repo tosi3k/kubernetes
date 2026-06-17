@@ -51,7 +51,7 @@ func (pgk podGroupKey) GetNamespace() string {
 }
 
 func (pgk podGroupKey) String() string {
-	return pgk.namespace + "/" + pgk.GetName()
+	return pgk.namespace + "/" + pgk.name
 }
 
 var _ klog.KMetadata = &podGroupKey{}
@@ -61,6 +61,10 @@ func newPodGroupKey(namespace string, name string) podGroupKey {
 		namespace: namespace,
 		name:      name,
 	}
+}
+
+func unpackPodGroupKey(key podGroupKey) (namespace, name string) {
+	return key.namespace, key.name
 }
 
 // podGroupStateData holds data and functionality shared between podGroupState and podGroupStateSnapshot.
@@ -84,6 +88,8 @@ type podGroupStateData struct {
 	assignedPods sets.Set[types.UID]
 	// podGroup is the cached API object of the PodGroup.
 	podGroup *schedulingv1alpha3.PodGroup
+	// parent references the parent composite pod group.
+	parent *podGroupKey
 }
 
 func newPodGroupStateData() podGroupStateData {
@@ -96,14 +102,11 @@ func newPodGroupStateData() podGroupStateData {
 }
 
 // addPod adds the pod to this group.
-// Depending on the NodeName, it can insert the pod into either assignedPods or unscheduledPods.
 func (d *podGroupStateData) addPod(pod *v1.Pod) {
 	d.generation = nextPodGroupGeneration()
 	d.allPods[pod.UID] = pod
 	if pod.Spec.NodeName != "" {
 		d.assignedPods.Insert(pod.UID)
-		// Clear from unscheduled or assumed in case the pod previously existed in the pod group
-		// in a different state, e.g., external binding of a previously-queued pod group member.
 		d.unscheduledPods.Delete(pod.UID)
 		delete(d.assumedPods, pod.UID)
 	} else {
@@ -112,13 +115,11 @@ func (d *podGroupStateData) addPod(pod *v1.Pod) {
 }
 
 // updatePod updates the pod in this group.
-// In case of binding, it moves the pod to assignedPods.
 func (d *podGroupStateData) updatePod(oldPod, newPod *v1.Pod) {
 	d.generation = nextPodGroupGeneration()
 	d.allPods[newPod.UID] = newPod
 	if oldPod.Spec.NodeName == "" && newPod.Spec.NodeName != "" {
 		d.assignedPods.Insert(newPod.UID)
-		// Clear pod from unscheduled and assumed when it is assigned.
 		d.unscheduledPods.Delete(newPod.UID)
 		delete(d.assumedPods, newPod.UID)
 	}
@@ -136,15 +137,10 @@ func (d *podGroupStateData) deletePod(podUID types.UID) {
 // assumePod marks a pod as assumed within the pod group state.
 func (d *podGroupStateData) assumePod(pod *v1.Pod) {
 	storedPod, ok := d.allPods[pod.UID]
-	// A scheduling pod may be removed from the cluster.
-	// In that case, we just ignore it.
 	if !ok {
 		return
 	}
-
 	d.generation = nextPodGroupGeneration()
-	// If the pod stored in the state is already assigned, put it into assignedPods.
-	// Otherwise put it to assumedPods.
 	if storedPod.Spec.NodeName != "" {
 		d.assignedPods.Insert(pod.UID)
 	} else {
@@ -155,20 +151,12 @@ func (d *podGroupStateData) assumePod(pod *v1.Pod) {
 
 // forgetPod moves a pod back from the assumed state to unscheduled within the pod group state.
 func (d *podGroupStateData) forgetPod(podUID types.UID) {
-
 	pod := d.allPods[podUID]
-	// A scheduling pod may be removed from the cluster.
-	// In that case, we just ignore it.
 	if pod == nil {
 		return
 	}
-
 	d.generation = nextPodGroupGeneration()
-
 	delete(d.assumedPods, podUID)
-
-	// If the pod is already assigned, put it into assignedPods.
-	// Otherwise, put it into unscheduledPods.
 	if pod.Spec.NodeName != "" {
 		d.assignedPods.Insert(podUID)
 	} else {
@@ -204,11 +192,12 @@ func (d *podGroupStateData) scheduledPodsCount() int {
 }
 
 // clone returns a clone of the pod group state data.
-// It does not deep copy the inner Pod and PodGroup objects
-// as they should not be mutated by the scheduler.
-// Cache's and snapshot's objects are read-only from the outside,
-// unless mutated explicitly by the methods.
 func (d *podGroupStateData) clone() podGroupStateData {
+	var parentCopy *podGroupKey
+	if d.parent != nil {
+		p := *d.parent
+		parentCopy = &p
+	}
 	return podGroupStateData{
 		generation:      d.generation,
 		allPods:         maps.Clone(d.allPods),
@@ -216,6 +205,7 @@ func (d *podGroupStateData) clone() podGroupStateData {
 		assumedPods:     maps.Clone(d.assumedPods),
 		assignedPods:    d.assignedPods.Clone(),
 		podGroup:        d.podGroup,
+		parent:          parentCopy,
 	}
 }
 
@@ -241,6 +231,141 @@ func (d *podGroupStateData) unscheduledPodsMap() map[string]*v1.Pod {
 	return result
 }
 
+// getParent returns the parent composite pod group name, if any.
+// This always refers to a composite pod group.
+func (d *podGroupStateData) getParent() (string, bool) {
+	if d.parent == nil {
+		return "", false
+	}
+	return d.parent.name, true
+}
+
+// setParent sets the parent composite pod group.
+// This always refers to a composite pod group.
+func (d *podGroupStateData) setParent(parent *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.parent = parent
+}
+
+// removeParent removes the parent composite pod group.
+// This always refers to a composite pod group.
+func (d *podGroupStateData) removeParent() {
+	d.generation = nextPodGroupGeneration()
+	d.parent = nil
+}
+
+type compositePodGroupStateData struct {
+	generation        int64
+	compositePodGroup *schedulingv1alpha3.CompositePodGroup
+	parent            *podGroupKey
+	childrenCPGs      sets.Set[podGroupKey]
+	childrenPGs       sets.Set[podGroupKey]
+}
+
+func newCompositePodGroupStateData() compositePodGroupStateData {
+	return compositePodGroupStateData{
+		childrenCPGs: make(sets.Set[podGroupKey]),
+		childrenPGs:  make(sets.Set[podGroupKey]),
+	}
+}
+
+func (d *compositePodGroupStateData) clone() compositePodGroupStateData {
+	var parentCopy *podGroupKey
+	if d.parent != nil {
+		p := *d.parent
+		parentCopy = &p
+	}
+	var childrenCPGsCopy sets.Set[podGroupKey]
+	if d.childrenCPGs != nil {
+		childrenCPGsCopy = d.childrenCPGs.Clone()
+	}
+	var childrenPGsCopy sets.Set[podGroupKey]
+	if d.childrenPGs != nil {
+		childrenPGsCopy = d.childrenPGs.Clone()
+	}
+	return compositePodGroupStateData{
+		generation:        d.generation,
+		compositePodGroup: d.compositePodGroup,
+		parent:            parentCopy,
+		childrenCPGs:      childrenCPGsCopy,
+		childrenPGs:       childrenPGsCopy,
+	}
+}
+
+// empty returns true when the composite pod group state contains no composite pod group.
+func (d *compositePodGroupStateData) empty() bool {
+	return d.compositePodGroup == nil && len(d.childrenCPGs) == 0 && len(d.childrenPGs) == 0
+}
+
+func (d *compositePodGroupStateData) setCompositePodGroup(compositePodGroup *schedulingv1alpha3.CompositePodGroup) {
+	d.generation = nextPodGroupGeneration()
+	d.compositePodGroup = compositePodGroup
+}
+
+func (d *compositePodGroupStateData) removeCompositePodGroup() {
+	d.generation = nextPodGroupGeneration()
+	d.compositePodGroup = nil
+}
+
+// getParent returns the parent composite pod group name, if any.
+// This always refers to a composite pod group.
+func (d *compositePodGroupStateData) getParent() (string, bool) {
+	if d.parent == nil {
+		return "", false
+	}
+	return d.parent.name, true
+}
+
+// setParent sets the parent composite pod group.
+// This always refers to a composite pod group.
+func (d *compositePodGroupStateData) setParent(parent *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.parent = parent
+}
+
+// removeParent removes the parent composite pod group.
+// This always refers to a composite pod group.
+func (d *compositePodGroupStateData) removeParent() {
+	d.generation = nextPodGroupGeneration()
+	d.parent = nil
+}
+
+func (d *compositePodGroupStateData) addChildCPG(child *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.childrenCPGs.Insert(*child)
+}
+
+func (d *compositePodGroupStateData) removeChildCPG(child *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.childrenCPGs.Delete(*child)
+}
+
+func (d *compositePodGroupStateData) getChildrenCPGs() []string {
+	var children []string
+	for child := range d.childrenCPGs {
+		children = append(children, child.String())
+	}
+	return children
+}
+
+func (d *compositePodGroupStateData) addChildPG(child *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.childrenPGs.Insert(*child)
+}
+
+func (d *compositePodGroupStateData) removeChildPG(child *podGroupKey) {
+	d.generation = nextPodGroupGeneration()
+	d.childrenPGs.Delete(*child)
+}
+
+func (d *compositePodGroupStateData) getChildrenPGs() []string {
+	var children []string
+	for child := range d.childrenPGs {
+		children = append(children, child.String())
+	}
+	return children
+}
+
 // podGroupState holds the runtime state of a pod group.
 type podGroupState struct {
 	lock sync.RWMutex
@@ -251,201 +376,226 @@ func newPodGroupState() *podGroupState {
 	return &podGroupState{podGroupStateData: newPodGroupStateData()}
 }
 
-// snapshot returns a deep copy of the live pod group state as an immutable snapshot.
-// It must be called under the cache lock.
 func (pgs *podGroupState) snapshot() *podGroupStateSnapshot {
 	return &podGroupStateSnapshot{podGroupStateData: pgs.podGroupStateData.clone()}
 }
 
-// empty returns true when the group contains no pods and the cached PodGroup object is nil.
-// It must be called under the cache lock.
 func (pgs *podGroupState) empty() bool {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.empty()
 }
 
-// addPod adds the pod to this group.
-// Depending on the NodeName, it can insert the pod into either assignedPods or unscheduledPods.
-// It must be called under the cache lock.
 func (pgs *podGroupState) addPod(pod *v1.Pod) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.addPod(pod)
 }
 
-// updatePod updates the pod in this group.
-// In case of binding, it moves the pod to assignedPods.
-// It must be called under the cache lock.
 func (pgs *podGroupState) updatePod(oldPod, newPod *v1.Pod) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.updatePod(oldPod, newPod)
 }
 
-// deletePod removes the pod from this pod group state.
-// It must be called under the cache lock.
 func (pgs *podGroupState) deletePod(podUID types.UID) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.deletePod(podUID)
 }
 
-// assumePod marks a pod as assumed within the pod group state.
-// It must be called under the cache lock.
 func (pgs *podGroupState) assumePod(pod *v1.Pod) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.assumePod(pod)
 }
 
-// forgetPod moves a pod back from the assumed state to unscheduled within the pod group state.
-// It must be called under the cache lock.
 func (pgs *podGroupState) forgetPod(podUID types.UID) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.forgetPod(podUID)
 }
 
-// setPodGroup sets the PodGroup object.
-// It must be called under the cache lock.
 func (pgs *podGroupState) setPodGroup(podGroup *schedulingv1alpha3.PodGroup) {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.setPodGroup(podGroup)
+	pgs.podGroupStateData.generation = nextPodGroupGeneration()
 }
 
-// removePodGroup removes the PodGroup object.
-// It must be called under the cache lock.
 func (pgs *podGroupState) removePodGroup() {
 	pgs.lock.Lock()
 	defer pgs.lock.Unlock()
-
 	pgs.podGroupStateData.removePodGroup()
+	pgs.podGroupStateData.generation = nextPodGroupGeneration()
 }
 
-// AllPods returns the UIDs of all pods known to the scheduler for this group.
 func (pgs *podGroupState) AllPods() sets.Set[types.UID] {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return sets.KeySet(pgs.podGroupStateData.allPods)
 }
 
-// AllPodsCount returns the number of all pods known to the scheduler for this group.
 func (pgs *podGroupState) AllPodsCount() int {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.allPodsCount()
 }
 
-// UnscheduledPods returns all pods that are unscheduled for this group,
-// i.e., are neither assumed nor assigned.
-// The returned map type corresponds to the argument of the PodActivator.Activate method.
 func (pgs *podGroupState) UnscheduledPods() map[string]*v1.Pod {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.unscheduledPodsMap()
 }
 
-// AssumedPods returns the UIDs of all pods for this group in the assumed state,
-// i.e., that have passed the Reserve stage.
 func (pgs *podGroupState) AssumedPods() sets.Set[types.UID] {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return sets.KeySet(pgs.podGroupStateData.assumedPods)
 }
 
-// AssignedPods returns the UIDs of all pods already assigned (bound) for this group.
 func (pgs *podGroupState) AssignedPods() sets.Set[types.UID] {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.assignedPods.Clone()
 }
 
-// ScheduledPods returns the pods that are either assumed or assigned for this pod group.
 func (pgs *podGroupState) ScheduledPods() []*v1.Pod {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.scheduledPods()
 }
 
-// ScheduledPodsCount returns the number of pods for this group that are either assumed or assigned.
 func (pgs *podGroupState) ScheduledPodsCount() int {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.scheduledPodsCount()
 }
 
-// PodGroup returns the PodGroup API object.
 func (pgs *podGroupState) PodGroup() *schedulingv1alpha3.PodGroup {
 	pgs.lock.RLock()
 	defer pgs.lock.RUnlock()
-
 	return pgs.podGroupStateData.podGroup
 }
 
-// podGroupStateSnapshot is an immutable, point-in-time copy of a podGroupState.
-// It is taken before a pod group scheduling cycle and used to track states of pods
-// during the cycle without modifying the live state of pods.
+func (pgs *podGroupState) GetParent() (string, bool) {
+	pgs.lock.RLock()
+	defer pgs.lock.RUnlock()
+	return pgs.podGroupStateData.getParent()
+}
+
+// compositePodGroupState holds the runtime state of a composite pod group.
+type compositePodGroupState struct {
+	lock sync.RWMutex
+	compositePodGroupStateData
+}
+
+func newCompositePodGroupState() *compositePodGroupState {
+	return &compositePodGroupState{compositePodGroupStateData: newCompositePodGroupStateData()}
+}
+
+func (cpgs *compositePodGroupState) snapshot() *compositePodGroupStateSnapshot {
+	return &compositePodGroupStateSnapshot{compositePodGroupStateData: cpgs.compositePodGroupStateData.clone()}
+}
+
+func (cpgs *compositePodGroupState) empty() bool {
+	cpgs.lock.RLock()
+	defer cpgs.lock.RUnlock()
+	return cpgs.compositePodGroupStateData.empty()
+}
+
+func (cpgs *compositePodGroupState) setCompositePodGroup(compositePodGroup *schedulingv1alpha3.CompositePodGroup) {
+	cpgs.lock.Lock()
+	defer cpgs.lock.Unlock()
+	cpgs.compositePodGroupStateData.setCompositePodGroup(compositePodGroup)
+}
+
+func (cpgs *compositePodGroupState) removeCompositePodGroup() {
+	cpgs.lock.Lock()
+	defer cpgs.lock.Unlock()
+	cpgs.compositePodGroupStateData.removeCompositePodGroup()
+}
+
+func (cpgs *compositePodGroupState) CompositePodGroup() *schedulingv1alpha3.CompositePodGroup {
+	cpgs.lock.RLock()
+	defer cpgs.lock.RUnlock()
+	return cpgs.compositePodGroupStateData.compositePodGroup
+}
+
+func (cpgs *compositePodGroupState) GetParent() (string, bool) {
+	cpgs.lock.RLock()
+	defer cpgs.lock.RUnlock()
+	return cpgs.compositePodGroupStateData.getParent()
+}
+
+func (cpgs *compositePodGroupState) GetChildrenCPGs() []string {
+	cpgs.lock.RLock()
+	defer cpgs.lock.RUnlock()
+	return cpgs.compositePodGroupStateData.getChildrenCPGs()
+}
+
+func (cpgs *compositePodGroupState) GetChildrenPGs() []string {
+	cpgs.lock.RLock()
+	defer cpgs.lock.RUnlock()
+	return cpgs.compositePodGroupStateData.getChildrenPGs()
+}
+
 type podGroupStateSnapshot struct {
 	podGroupStateData
 }
 
-// assumePod marks a pod within the pod group state snapshot as assumed.
 func (s *podGroupStateSnapshot) assumePod(pod *v1.Pod) {
 	s.podGroupStateData.assumePod(pod)
 }
 
-// forgetPod removes a pod from the assumed state within the snapshot.
 func (s *podGroupStateSnapshot) forgetPod(podUID types.UID) {
 	s.podGroupStateData.forgetPod(podUID)
 }
 
-// AllPods returns the UIDs of all pods known to the scheduler for this group.
 func (s *podGroupStateSnapshot) AllPods() sets.Set[types.UID] {
 	return sets.KeySet(s.podGroupStateData.allPods)
 }
 
-// UnscheduledPods returns all pods that are unscheduled for this group.
 func (s *podGroupStateSnapshot) UnscheduledPods() map[string]*v1.Pod {
 	return s.podGroupStateData.unscheduledPodsMap()
 }
 
-// AssumedPods returns the UIDs of all assumed pods for this group.
 func (s *podGroupStateSnapshot) AssumedPods() sets.Set[types.UID] {
 	return sets.KeySet(s.podGroupStateData.assumedPods)
 }
 
-// AssignedPods returns the UIDs of all assigned (bound) pods for this group.
 func (s *podGroupStateSnapshot) AssignedPods() sets.Set[types.UID] {
 	return s.podGroupStateData.assignedPods
 }
 
-// ScheduledPods returns the pods that are either assumed or assigned for this pod group.
 func (s *podGroupStateSnapshot) ScheduledPods() []*v1.Pod {
 	return s.podGroupStateData.scheduledPods()
 }
 
-// AllPodsCount returns the number of all pods known to the scheduler for this group.
 func (s *podGroupStateSnapshot) AllPodsCount() int {
 	return s.podGroupStateData.allPodsCount()
 }
 
-// ScheduledPodsCount returns the number of pods for this group that are either assumed or assigned.
 func (s *podGroupStateSnapshot) ScheduledPodsCount() int {
 	return s.podGroupStateData.scheduledPodsCount()
+}
+
+func (s *podGroupStateSnapshot) GetParent() (string, bool) {
+	return s.podGroupStateData.getParent()
+}
+
+type compositePodGroupStateSnapshot struct {
+	compositePodGroupStateData
+}
+
+func (s *compositePodGroupStateSnapshot) GetParent() (string, bool) {
+	return s.compositePodGroupStateData.getParent()
+}
+
+func (s *compositePodGroupStateSnapshot) GetChildrenCPGs() []string {
+	return s.compositePodGroupStateData.getChildrenCPGs()
+}
+
+func (s *compositePodGroupStateSnapshot) GetChildrenPGs() []string {
+	return s.compositePodGroupStateData.getChildrenPGs()
 }

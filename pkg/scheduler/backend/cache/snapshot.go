@@ -100,6 +100,8 @@ type Snapshot struct {
 	assumedPodKeys []string
 	// podGroupStates maps a pod group key to a snapshot of its state, used during a pod group scheduling cycle.
 	podGroupStates map[podGroupKey]*podGroupStateSnapshot
+	// compositePodGroupStates maps a pod group key to a snapshot of its state, used during a pod group scheduling cycle.
+	compositePodGroupStates map[podGroupKey]*compositePodGroupStateSnapshot
 	// placementNodes stores nodes that are present in the current placement.
 	// If placement is not set, this is nil.
 	// It should only be set in the pod group scheduling cycle, when checking if pod group can be scheduled within the placement.
@@ -111,6 +113,11 @@ type Snapshot struct {
 	// snapshot info before mutations. It is only used during the mutation session.
 	// StartMutation will fill it and EndMutation will restore data from it.
 	snapshotBackup *snapshotBackupData
+	// compositePodGroupEnabled stores the CompositePodGroup feature gate value.
+	compositePodGroupEnabled bool
+	// hasBackup holds information whether backup was performed and
+	// restore was not performed yet.
+	hasBackup bool
 }
 
 var _ fwk.SharedLister = &Snapshot{}
@@ -145,11 +152,13 @@ type assumedPodState struct {
 // NewEmptySnapshot initializes a Snapshot struct and returns it.
 func NewEmptySnapshot() *Snapshot {
 	return &Snapshot{
-		nodeInfoMap:            make(map[string]*framework.NodeInfo),
-		usedPVCRefCounts:       make(map[string]int),
-		assumedPodStates:       make(map[string]*assumedPodState),
-		podGroupStates:         make(map[podGroupKey]*podGroupStateSnapshot),
-		genericWorkloadEnabled: utilfeature.DefaultFeatureGate.Enabled(features.GenericWorkload),
+		nodeInfoMap:              make(map[string]*framework.NodeInfo),
+		usedPVCRefCounts:         make(map[string]int),
+		assumedPodStates:         make(map[string]*assumedPodState),
+		podGroupStates:           make(map[podGroupKey]*podGroupStateSnapshot),
+		compositePodGroupStates:  make(map[podGroupKey]*compositePodGroupStateSnapshot),
+		genericWorkloadEnabled:   utilfeature.DefaultFeatureGate.Enabled(features.GenericWorkload),
+		compositePodGroupEnabled: utilfeature.DefaultFeatureGate.Enabled(features.CompositePodGroup),
 	}
 }
 
@@ -178,6 +187,9 @@ func NewSnapshot(pods []*v1.Pod, nodes []*v1.Node) *Snapshot {
 	s.usedPVCRefCounts = createUsedPVCRefCounts(nodeInfoMap)
 	if s.genericWorkloadEnabled {
 		s.podGroupStates = createPodGroupStates(pods)
+	}
+	if s.compositePodGroupEnabled {
+		s.compositePodGroupStates = make(map[podGroupKey]*compositePodGroupStateSnapshot)
 	}
 
 	return s
@@ -372,6 +384,54 @@ func (l *podGroupSnapshotListerImpl) Get(namespace, name string) (*schedulingv1a
 	return pg, nil
 }
 
+// CompositePodGroupStates returns a CompositePodGroupStateLister.
+func (s *Snapshot) CompositePodGroupStates() fwk.CompositePodGroupStateLister {
+	return &compositePodGroupStateSnapshotLister{compositePodGroupStates: s.compositePodGroupStates}
+}
+
+// CompositePodGroups returns a CompositePodGroupLister.
+func (s *Snapshot) CompositePodGroups() fwk.CompositePodGroupLister {
+	return &compositePodGroupSnapshotListerImpl{snapshot: s}
+}
+
+var _ fwk.CompositePodGroupLister = &compositePodGroupSnapshotListerImpl{}
+
+type compositePodGroupSnapshotListerImpl struct {
+	snapshot *Snapshot
+}
+
+func (l *compositePodGroupSnapshotListerImpl) Get(namespace string, name string) (*schedulingv1alpha3.CompositePodGroup, error) {
+	if !l.snapshot.compositePodGroupEnabled {
+		return nil, fmt.Errorf("composite pod group feature gate is disabled")
+	}
+	key := newPodGroupKey(namespace, name)
+	pgs, exists := l.snapshot.compositePodGroupStates[key]
+	if !exists {
+		return nil, fmt.Errorf("composite pod group not found in snapshot", key)
+	}
+	cpg := pgs.compositePodGroup
+	if cpg == nil {
+		return nil, fmt.Errorf("composite pod group object not found for pod group %q", key)
+	}
+	return cpg, nil
+}
+
+var _ fwk.CompositePodGroupStateLister = &compositePodGroupStateSnapshotLister{}
+
+type compositePodGroupStateSnapshotLister struct {
+	compositePodGroupStates map[podGroupKey]*compositePodGroupStateSnapshot
+}
+
+// Get returns the composite pod group state from the snapshot for the given pod group.
+func (l *compositePodGroupStateSnapshotLister) Get(namespace string, name string) (fwk.CompositePodGroupState, error) {
+	key := newPodGroupKey(namespace, name)
+	state, ok := l.compositePodGroupStates[key]
+	if !ok {
+		return nil, fmt.Errorf("composite pod group state not found for pod group %s/%s", namespace, name)
+	}
+	return state, nil
+}
+
 var _ fwk.PodGroupStateLister = &podGroupStateSnapshotLister{}
 
 type podGroupStateSnapshotLister struct {
@@ -383,7 +443,7 @@ func (l *podGroupStateSnapshotLister) Get(namespace string, podGroupName string)
 	key := newPodGroupKey(namespace, podGroupName)
 	state, ok := l.podGroupStates[key]
 	if !ok {
-		return nil, fmt.Errorf("pod group state not found for pod group %s", key)
+		return nil, fmt.Errorf("pod group state not found for pod group %s/%s", namespace, podGroupName)
 	}
 	return state, nil
 }

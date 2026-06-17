@@ -522,7 +522,7 @@ func TestPostFilter(t *testing.T) {
 					defer apiDispatcher.Close()
 				}
 
-				cache := internalcache.New(ctx, apiDispatcher, tt.features.EnableGenericWorkload)
+				cache := internalcache.New(ctx, apiDispatcher, tt.features.EnableGenericWorkload, false)
 				for _, podGroup := range tt.podGroups {
 					cache.AddPodGroup(podGroup)
 				}
@@ -2262,7 +2262,7 @@ func TestPreempt(t *testing.T) {
 						defer apiDispatcher.Close()
 					}
 
-					cache := internalcache.New(ctx, apiDispatcher, false)
+					cache := internalcache.New(ctx, apiDispatcher, false, false)
 					for _, pod := range testPods {
 						if err := cache.AddPod(logger, pod.DeepCopy()); err != nil {
 							t.Fatalf("Failed to add pod %s: %v", pod.Name, err)
@@ -2574,7 +2574,7 @@ func TestPreEnqueue(t *testing.T) {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			cache := internalcache.New(ctx, nil, tt.features.EnableGenericWorkload)
+			cache := internalcache.New(ctx, nil, tt.features.EnableGenericWorkload, false)
 			for _, podGroup := range tt.pgs {
 				cache.AddPodGroup(podGroup)
 			}
@@ -2687,7 +2687,7 @@ func TestDefaultPreemption_PodGroupPostFilter_ErrorWrapping(t *testing.T) {
 		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 	}
 
-	cache := internalcache.New(ctx, nil, true)
+	cache := internalcache.New(ctx, nil, true, false)
 	cache.AddPodGroup(preemptorPG)
 
 	snapshot := internalcache.NewSnapshot(testPods, nodes)

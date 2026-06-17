@@ -52,6 +52,8 @@ type SharedLister interface {
 	PodGroupStates() PodGroupStateLister
 	// PodGroups provides access to cached pod group objects.
 	PodGroups() PodGroupLister
+	CompositePodGroupStates() CompositePodGroupStateLister
+	CompositePodGroups() CompositePodGroupLister
 }
 
 // PodGroupLister provides read access to cached pod group objects.
@@ -76,8 +78,20 @@ type MutableSnapshotSharedLister interface {
 
 // PodGroupStateLister provides read access to pod group states.
 type PodGroupStateLister interface {
-	// Get returns the PodGroupState of the given pod group.
-	Get(namespace string, podGroupName string) (PodGroupState, error)
+	// GetPodGroupState returns the PodGroupState of the given pod group.
+	GetPodGroupState(namespace string, podGroupName string) (PodGroupState, error)
+}
+
+// CompositePodGroupLister provides read access to cached composite pod group objects.
+type CompositePodGroupLister interface {
+	// Get returns the CompositePodGroup with the given namespace and name.
+	Get(namespace, name string) (*schedulingapi.CompositePodGroup, error)
+}
+
+// CompositePodGroupStateLister provides read access to composite pod group states.
+type CompositePodGroupStateLister interface {
+	// GetCompositePodGroupState returns the PodGroupState of the given pod group.
+	GetCompositePodGroupState(namespace string, podGroupName string) (CompositePodGroupState, error)
 }
 
 type CSINodeLister interface {
@@ -185,6 +199,10 @@ type PodGroupManager interface {
 	PodGroupStates() PodGroupStateLister
 	// PodGroups returns the PodGroupLister.
 	PodGroups() PodGroupLister
+	// CompositePodGroupStates returns the PodGroupStateLister.
+	CompositePodGroupStates() CompositePodGroupStateLister
+	// CompositePodGroups returns the PodGroupLister.
+	CompositePodGroups() CompositePodGroupLister
 }
 
 // PodGroupState provides an interface to view the state of a single pod group.
@@ -206,4 +224,16 @@ type PodGroupState interface {
 	ScheduledPods() []*v1.Pod
 	// ScheduledPodsCount returns the number of pods for this group that are either assumed or assigned.
 	ScheduledPodsCount() int
+	// GetParent returns the parent composite pod group name, if any.
+	GetParent() (string, bool)
+}
+
+// CompositePodGroupState provides an interface to view the state of a single composite pod group.
+type CompositePodGroupState interface {
+	// GetParent returns the parent composite pod group name, if any.
+	GetParent() (string, bool)
+	// GetChildrenPGs returns the keys of child pod groups.
+	GetChildrenPGs() []string
+	// GetChildrenCPGs returns the keys of child composite pod groups.
+	GetChildrenCPGs() []string
 }
