@@ -37,6 +37,9 @@ var _ fwk.ResourceSliceLister = &resourceSliceListerContract{}
 var _ fwk.PodGroupStateLister = &podGroupStateListerContract{}
 var _ fwk.PodGroupLister = &podGroupListerContract{}
 var _ fwk.PodGroupState = &podGroupStateContract{}
+var _ fwk.CompositePodGroupStateLister = &compositePodGroupStateListerContract{}
+var _ fwk.CompositePodGroupLister = &compositePodGroupListerContract{}
+var _ fwk.CompositePodGroupState = &compositePodGroupStateContract{}
 var _ fwk.DeviceClassLister = &deviceClassListerContract{}
 var _ fwk.ResourceClaimTracker = &resourceClaimTrackerContract{}
 var _ fwk.DeviceClassResolver = &deviceClassResolverContract{}
@@ -84,6 +87,14 @@ func (c *shareListerContract) PodGroups() fwk.PodGroupLister {
 	return nil
 }
 
+func (c *shareListerContract) CompositePodGroupStates() fwk.CompositePodGroupStateLister {
+	return nil
+}
+
+func (c *shareListerContract) CompositePodGroups() fwk.CompositePodGroupLister {
+	return nil
+}
+
 type podGroupListerContract struct{}
 
 func (c *podGroupListerContract) Get(_ string, _ string) (*schedulingapi.PodGroup, error) {
@@ -92,7 +103,7 @@ func (c *podGroupListerContract) Get(_ string, _ string) (*schedulingapi.PodGrou
 
 type podGroupStateListerContract struct{}
 
-func (c *podGroupStateListerContract) Get(_ string, _ string, _ string) (fwk.PodGroupState, error) {
+func (c *podGroupStateListerContract) Get(_ string, _ string) (fwk.PodGroupState, error) {
 	return nil, nil
 }
 
@@ -131,6 +142,32 @@ func (c *podGroupStateContract) GetParent() (string, bool) {
 }
 
 func (c *podGroupStateContract) GetChildren() []string {
+	return nil
+}
+
+type compositePodGroupListerContract struct{}
+
+func (c *compositePodGroupListerContract) Get(_ string, _ string) (*schedulingapi.CompositePodGroup, error) {
+	return nil, nil
+}
+
+type compositePodGroupStateListerContract struct{}
+
+func (c *compositePodGroupStateListerContract) Get(_ string, _ string) (fwk.CompositePodGroupState, error) {
+	return nil, nil
+}
+
+type compositePodGroupStateContract struct{}
+
+func (c *compositePodGroupStateContract) GetParent() (string, bool) {
+	return "", false
+}
+
+func (c *compositePodGroupStateContract) GetChildrenPGs() []string {
+	return nil
+}
+
+func (c *compositePodGroupStateContract) GetChildrenCPGs() []string {
 	return nil
 }
 

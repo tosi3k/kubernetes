@@ -2753,7 +2753,7 @@ func TestDefaultPreemption_PodGroupPostFilter_SchedulingConstraints(t *testing.T
 		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 	}
 
-	cache := internalcache.New(ctx, nil, true)
+	cache := internalcache.New(ctx, nil, true, false /* compositePodGroupEnabled */)
 	cache.AddPodGroup(pgWithConstraints)
 
 	snapshot := internalcache.NewSnapshot(testPods, nodes)
@@ -2837,7 +2837,7 @@ func TestDefaultPreemption_PodGroupPostFilter_InvalidSnapshot(t *testing.T) {
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
 
-			cache := internalcache.New(ctx, nil, true)
+			cache := internalcache.New(ctx, nil, true, false /* compositePodGroupEnabled */)
 			cache.AddPodGroup(pgOk)
 
 			snapshot := internalcache.NewSnapshot(testPods, nodes)

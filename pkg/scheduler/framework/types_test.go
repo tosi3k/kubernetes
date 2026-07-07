@@ -204,35 +204,35 @@ func TestQueuedPodGroupInfoOrdering(t *testing.T) {
 
 	// Desired order: pod3 > pod5 > (pod1 = pod4) > pod2.
 	pInfo1 := &QueuedPodInfo{
-		PodInfo: &PodInfo{Pod: st.MakePod().Name("pod1").UID("uid1").Priority(midPriority).Obj()},
+		PodInfo: &PodInfo{Pod: st.MakePod().Namespace("default").Name("pod1").UID("uid1").Priority(midPriority).PodGroupName("pg1").Obj()},
 		QueueingParams: QueueingParams{
 			Attempts:  1,
 			Timestamp: timestamp,
 		},
 	}
 	pInfo2 := &QueuedPodInfo{
-		PodInfo: &PodInfo{Pod: st.MakePod().Name("pod2").UID("uid2").Priority(midPriority).Obj()},
+		PodInfo: &PodInfo{Pod: st.MakePod().Namespace("default").Name("pod2").UID("uid2").Priority(midPriority).PodGroupName("pg1").Obj()},
 		QueueingParams: QueueingParams{
 			Attempts:  1,
 			Timestamp: timestampNewer,
 		},
 	}
 	pInfo3 := &QueuedPodInfo{
-		PodInfo: &PodInfo{Pod: st.MakePod().Name("pod3").UID("uid3").Priority(highPriority).Obj()},
+		PodInfo: &PodInfo{Pod: st.MakePod().Namespace("default").Name("pod3").UID("uid3").Priority(highPriority).PodGroupName("pg1").Obj()},
 		QueueingParams: QueueingParams{
 			Attempts:  1,
 			Timestamp: timestamp,
 		},
 	}
 	pInfo4 := &QueuedPodInfo{
-		PodInfo: &PodInfo{Pod: st.MakePod().Name("pod4").UID("uid4").Priority(midPriority).Obj()},
+		PodInfo: &PodInfo{Pod: st.MakePod().Namespace("default").Name("pod4").UID("uid4").Priority(midPriority).PodGroupName("pg1").Obj()},
 		QueueingParams: QueueingParams{
 			Attempts:  1,
 			Timestamp: timestamp,
 		},
 	}
 	pInfo5 := &QueuedPodInfo{
-		PodInfo: &PodInfo{Pod: st.MakePod().Name("pod5").UID("uid5").Priority(midPriority).Obj()},
+		PodInfo: &PodInfo{Pod: st.MakePod().Namespace("default").Name("pod5").UID("uid5").Priority(midPriority).PodGroupName("pg1").Obj()},
 		QueueingParams: QueueingParams{
 			Attempts:  2,
 			Timestamp: timestamp,
@@ -327,9 +327,8 @@ func TestQueuedPodGroupInfoOrdering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pgqi := &QueuedPodGroupInfo{
-				PodGroupInfo: &PodGroupInfo{Namespace: "default", Name: "pg1"},
-			}
+			pg := st.MakePodGroup().Namespace("default").Name("pg1").Obj()
+			pgqi := newQueuedPodGroupInfo(pg)
 			if tt.initialPods != nil {
 				pgqi.SetPods(tt.initialPods)
 			}

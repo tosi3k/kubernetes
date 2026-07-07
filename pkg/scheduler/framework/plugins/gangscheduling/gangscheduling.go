@@ -24,6 +24,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	schedulingapi "k8s.io/api/scheduling/v1alpha3"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	schedulinglisters "k8s.io/client-go/listers/scheduling/v1alpha3"
@@ -322,20 +323,20 @@ func (pl *GangScheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *fwk.Stat
 	// This plugin only cares about pods with a Gang scheduling policy.
 	if policy.Gang == nil {
 		// But if the basic PodGroup is a member of a CPG hierarchy, we still need to check if the root CPG is ready.
-		if podGroup.Spec.ParentCompositePodGroupName == nil {
+		if podGroup.Spec.ParentCompositePodGroupName == nil || !utilfeature.DefaultFeatureGate.Enabled(features.CompositePodGroup) {
 			return nil
 		}
 		return pl.checkCPGHierarchyReadiness(namespace, *podGroup.Spec.ParentCompositePodGroupName)
 	}
 
-	podGroupState, err := pl.podGroupManager.PodGroupStates().Get(framework.PodGroupKeyType, namespace, *schedulingGroup.PodGroupName)
+	podGroupState, err := pl.podGroupManager.PodGroupStates().Get(namespace, *schedulingGroup.PodGroupName)
 	if err != nil {
 		return fwk.AsStatus(err)
 	}
 	allPodsCount := podGroupState.AllPodsCount()
 
 	// Standalone pod group (no CPG parent).
-	if podGroup.Spec.ParentCompositePodGroupName == nil {
+	if podGroup.Spec.ParentCompositePodGroupName == nil || !utilfeature.DefaultFeatureGate.Enabled(features.CompositePodGroup) {
 		if allPodsCount < int(policy.Gang.MinCount) {
 			return fwk.NewStatus(fwk.UnschedulableAndUnresolvable, "waiting for minCount pods from a gang to appear in scheduling queue")
 		}
@@ -396,7 +397,7 @@ func (pl *GangScheduling) checkCPGHierarchyReadiness(namespace, startCPGName str
 }
 
 func (pl *GangScheduling) isCPGTreeReady(namespace, cpgName string) bool {
-	cpgState, err := pl.podGroupManager.PodGroupStates().Get(framework.CompositePodGroupKeyType, namespace, cpgName)
+	cpgState, err := pl.podGroupManager.CompositePodGroupStates().Get(namespace, cpgName)
 	if err != nil {
 		return false
 	}
@@ -412,17 +413,16 @@ func (pl *GangScheduling) isCPGTreeReady(namespace, cpgName string) bool {
 	}
 
 	successfulChildren := 0
-	for _, childKey := range cpgState.GetChildren() {
-		childType, _, childName := unpackChildKey(childKey)
-
-		if childType == framework.CompositePodGroupKeyType {
-			if pl.isCPGTreeReady(namespace, childName) {
-				successfulChildren++
-			}
-		} else {
-			if pl.isPGReadyForPreEnqueue(namespace, childName) {
-				successfulChildren++
-			}
+	for _, childCPGKey := range cpgState.GetChildrenCPGs() {
+		_, childName := unpackChildKey(childCPGKey)
+		if pl.isCPGTreeReady(namespace, childName) {
+			successfulChildren++
+		}
+	}
+	for _, childPGKey := range cpgState.GetChildrenPGs() {
+		_, childName := unpackChildKey(childPGKey)
+		if pl.isPGReadyForPreEnqueue(namespace, childName) {
+			successfulChildren++
 		}
 	}
 
@@ -440,7 +440,7 @@ func (pl *GangScheduling) isPGReadyForPreEnqueue(namespace, pgName string) bool 
 		minCount = int(pg.Spec.SchedulingPolicy.Gang.MinCount)
 	}
 
-	pgState, err := pl.podGroupManager.PodGroupStates().Get(framework.PodGroupKeyType, namespace, pgName)
+	pgState, err := pl.podGroupManager.PodGroupStates().Get(namespace, pgName)
 	if err != nil {
 		return false
 	}
@@ -478,7 +478,7 @@ func (pl *GangScheduling) Permit(ctx context.Context, state fwk.CycleState, pod 
 	}
 
 	podGroupStateLister := pl.podGroupManager.PodGroupStates()
-	podGroupState, err := podGroupStateLister.Get(framework.PodGroupKeyType, namespace, *schedulingGroup.PodGroupName)
+	podGroupState, err := podGroupStateLister.Get(namespace, *schedulingGroup.PodGroupName)
 	if err != nil {
 		return fwk.AsStatus(err), 0
 	}
@@ -566,13 +566,21 @@ func (pl *GangScheduling) placementFeasible(ctx context.Context, placementCycleS
 		return pl.placementFeasibleForPodGroup(ctx, placementCycleState, podGroupInfo)
 	}
 
-	cpgState, err := pl.snapshotLister.PodGroupStates().Get(podGroupInfo.GetType(), podGroupInfo.GetNamespace(), podGroupInfo.GetName())
+	cpgState, err := pl.snapshotLister.CompositePodGroupStates().Get(podGroupInfo.GetNamespace(), podGroupInfo.GetName())
 	if err != nil {
 		return fwk.NewStatus(fwk.Unschedulable, fmt.Sprintf("pod group state for %s %s of type %s", podGroupInfo.GetNamespace(), podGroupInfo.GetName(), podGroupInfo.GetType()))
 	}
 
 	scheduled := 0
-	for _, childKey := range cpgState.GetChildren() {
+	for _, childKey := range cpgState.GetChildrenCPGs() {
+		status, exists := statuses.Status[childKey]
+		// If the child is not in the status map, it means its PodGroup was already scheduled.
+		// This can happen if we partially schedule a CPG and then some more pods arrive.
+		if !exists || status.IsSuccess() {
+			scheduled++
+		}
+	}
+	for _, childKey := range cpgState.GetChildrenPGs() {
 		status, exists := statuses.Status[childKey]
 		// If the child is not in the status map, it means its PodGroup was already scheduled.
 		// This can happen if we partially schedule a CPG and then some more pods arrive.
@@ -604,7 +612,7 @@ func (pl *GangScheduling) placementFeasibleForPodGroup(ctx context.Context, plac
 	if pg.Spec.SchedulingPolicy.Gang == nil {
 		return nil
 	}
-	podGroupState, err := pl.snapshotLister.PodGroupStates().Get(framework.PodGroupKeyType, podGroupInfo.GetNamespace(), podGroupInfo.GetName())
+	podGroupState, err := pl.snapshotLister.PodGroupStates().Get(podGroupInfo.GetNamespace(), podGroupInfo.GetName())
 	if err != nil {
 		return fwk.AsStatus(fmt.Errorf("failed to get podGroup state for podGroup %s to compute gang feasibility: %w", klog.KObj(pg), err))
 	}
@@ -639,10 +647,7 @@ func (pl *GangScheduling) placementFeasibleForPodGroup(ctx context.Context, plac
 	return nil
 }
 
-func unpackChildKey(childKey string) (string, string, string) {
+func unpackChildKey(childKey string) (string, string) {
 	parts := strings.Split(childKey, "/")
-	if len(parts) == 3 {
-		return parts[0], parts[1], parts[2]
-	}
-	return framework.PodGroupKeyType, "", childKey
+	return parts[0], parts[1]
 }

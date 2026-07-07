@@ -56,8 +56,8 @@ func TestCPGQueueing(t *testing.T) {
 					CreatePods: []*v1.Pod{p1, p2},
 				},
 				{
-					Name:                            "Verify pods are unschedulable due to incomplete CPG hierarchy",
-					WaitForPodsInIncompleteEntities: []string{"p1", "p2"},
+					Name:                                "Verify pods are unschedulable due to incomplete CPG hierarchy",
+					WaitForPodsInIncompletePodGroupPods: []string{"p1", "p2"},
 				},
 				{
 					Name:                    "Create the missing root CPG",
@@ -126,8 +126,8 @@ func TestCPGQueueing(t *testing.T) {
 					WaitForPodsInUnschedulableEntities: []string{"p2-1", "p2-2"},
 				},
 				{
-					Name:                            "Verify second group pods are in incomplete entities due to missing PodGroup",
-					WaitForPodsInIncompleteEntities: []string{"p2-3", "p2-4"},
+					Name:                                "Verify second group pods are in incomplete entities due to missing PodGroup",
+					WaitForPodsInIncompletePodGroupPods: []string{"p2-3", "p2-4"},
 				},
 				{
 					Name:           "Create second PodGroup, waking up root CPG",

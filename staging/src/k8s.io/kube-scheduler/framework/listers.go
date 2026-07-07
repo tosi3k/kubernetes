@@ -79,7 +79,7 @@ type MutableSnapshotSharedLister interface {
 // PodGroupStateLister provides read access to pod group states.
 type PodGroupStateLister interface {
 	// GetPodGroupState returns the PodGroupState of the given pod group.
-	GetPodGroupState(namespace string, podGroupName string) (PodGroupState, error)
+	Get(namespace string, podGroupName string) (PodGroupState, error)
 }
 
 // CompositePodGroupLister provides read access to cached composite pod group objects.
@@ -91,7 +91,7 @@ type CompositePodGroupLister interface {
 // CompositePodGroupStateLister provides read access to composite pod group states.
 type CompositePodGroupStateLister interface {
 	// GetCompositePodGroupState returns the PodGroupState of the given pod group.
-	GetCompositePodGroupState(namespace string, podGroupName string) (CompositePodGroupState, error)
+	Get(namespace string, podGroupName string) (CompositePodGroupState, error)
 }
 
 type CSINodeLister interface {

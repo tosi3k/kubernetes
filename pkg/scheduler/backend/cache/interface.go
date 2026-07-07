@@ -123,6 +123,12 @@ type Cache interface {
 	// PodGroups returns a PodGroupLister used to access the cached PodGroup objects.
 	PodGroups() fwk.PodGroupLister
 
+	// CompositePodGroupStates returns a CompositePodGroupStateLister.
+	CompositePodGroupStates() fwk.CompositePodGroupStateLister
+
+	// CompositePodGroups returns a CompositePodGroupLister used to access the cached CompositePodGroup objects.
+	CompositePodGroups() fwk.CompositePodGroupLister
+
 	// AddPodGroupMember adds not assigned and not assumed pod to its pod group state.
 	AddPodGroupMember(pod *v1.Pod)
 

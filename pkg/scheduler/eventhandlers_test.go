@@ -842,7 +842,7 @@ func TestAddPod(t *testing.T) {
 				return
 			}
 
-			pgs, err := sched.Cache.PodGroupStates().Get("podgroup", tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
+			pgs, err := sched.Cache.PodGroupStates().Get(tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
 
 			if !tt.genericWorkloadEnabled {
 				if err == nil {
@@ -1140,7 +1140,7 @@ func TestUpdatePod(t *testing.T) {
 				// Pod has no pod group, so there is no pod group state to check, the test can complete.
 				return
 			}
-			pgs, err := sched.Cache.PodGroupStates().Get("podgroup", tt.oldPod.Namespace, *tt.oldPod.Spec.SchedulingGroup.PodGroupName)
+			pgs, err := sched.Cache.PodGroupStates().Get(tt.oldPod.Namespace, *tt.oldPod.Spec.SchedulingGroup.PodGroupName)
 
 			if !tt.genericWorkloadEnabled || tt.expectPodGroupStateDeleted {
 				if err == nil {
@@ -1344,7 +1344,7 @@ func TestDeletePod(t *testing.T) {
 				// Pod has no pod group, so there is no pod group state to check, the test can complete.
 				return
 			}
-			pgs, err := sched.Cache.PodGroupStates().Get(framework.PodGroupKeyType, tt.initialPod.Namespace, *tt.initialPod.Spec.SchedulingGroup.PodGroupName)
+			pgs, err := sched.Cache.PodGroupStates().Get(tt.initialPod.Namespace, *tt.initialPod.Spec.SchedulingGroup.PodGroupName)
 			if tt.expectInPodGroupStateAssumed {
 				if err != nil {
 					t.Fatalf("Unexpected error getting pod group state: %v", err)
@@ -1379,7 +1379,7 @@ func TestAddPodGroup(t *testing.T) {
 			defer cancel()
 
 			sched := &Scheduler{
-				Cache:           internalcache.New(ctx, nil, true),
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
 				SchedulingQueue: internalqueue.NewTestQueue(ctx, nil),
 				logger:          logger,
 			}
@@ -1430,7 +1430,7 @@ func TestUpdatePodGroup(t *testing.T) {
 			defer cancel()
 
 			sched := &Scheduler{
-				Cache:           internalcache.New(ctx, nil, true),
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
 				SchedulingQueue: internalqueue.NewTestQueue(ctx, nil),
 				logger:          logger,
 			}
@@ -1477,7 +1477,7 @@ func TestDeletePodGroup(t *testing.T) {
 			defer cancel()
 
 			sched := &Scheduler{
-				Cache:           internalcache.New(ctx, nil, true),
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
 				SchedulingQueue: internalqueue.NewTestQueue(ctx, nil),
 				logger:          logger,
 			}

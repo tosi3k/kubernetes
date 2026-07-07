@@ -263,6 +263,7 @@ func (sched *Scheduler) podGroupCycle(ctx context.Context, schedFwk framework.Fr
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.CompositePodGroup) && podGroupInfo.CompositePodGroup != nil {
+		logger := klog.FromContext(ctx)
 		if err := sched.SchedulingQueue.AddAttemptedPodGroupIfNeeded(logger, podGroupInfo, sched.SchedulingQueue.SchedulingCycle()); err != nil {
 			utilruntime.HandleErrorWithContext(ctx, err, "Failed to add attempted pod group to scheduling queue", "compositePodGroup", klog.KObj(podGroupInfo))
 		}
@@ -854,17 +855,32 @@ func (sched *Scheduler) podGroupSchedulingRecursiveAlgorithm(ctx context.Context
 
 	namespace := podGroupInfo.Namespace
 	cpgName := podGroupInfo.Name
-	cpgState, err := sched.nodeInfoSnapshot.PodGroupStates().Get(framework.CompositePodGroupKeyType, namespace, cpgName)
+	cpgState, err := sched.nodeInfoSnapshot.CompositePodGroupStates().Get(namespace, cpgName)
 	if err != nil {
 		logger.V(5).Info("podGroupSchedulingRecursiveAlgorithm failed (failed to get CPG state)", "podGroup", klog.KObj(podGroupInfo), "error", err)
 		return nil, nil, fwk.AsStatus(err)
 	}
-	childrenKeys := cpgState.GetChildren()
 
-	for _, childKey := range childrenKeys {
-		childPGInfo, err := sched.buildPodGroupInfoFromKey(childKey, podGroupInfo)
+	// TODO: the sequence in which we proceed with scheduling is wrong:
+	// 1) It is non-deterministic.
+	// 2) It should be based on the creation timestamp - which means PGs and CPGs can interleave.
+	for _, childCPGKey := range cpgState.GetChildrenCPGs() {
+		childPGInfo, err := sched.buildPodGroupInfoFromKey(childCPGKey, podGroupInfo)
 		if err != nil {
-			logger.V(5).Info("podGroupSchedulingRecursiveAlgorithm failed (failed to build child PG info)", "podGroup", klog.KObj(podGroupInfo), "childKey", childKey, "error", err)
+			logger.V(5).Info("podGroupSchedulingRecursiveAlgorithm failed (failed to build child PG info)", "podGroup", klog.KObj(podGroupInfo), "childKey", childCPGKey, "error", err)
+			return nil, nil, fwk.AsStatus(err)
+		}
+
+		childResults, revertFn, status := sched.podGroupSchedulingRecursiveAlgorithm(ctx, schedFwk, podGroupCycleState, childPGInfo, postFilterMode)
+		allPGResults = append(allPGResults, childResults...)
+		if status.IsSuccess() && revertFn != nil {
+			revertFns = append(revertFns, revertFn)
+		}
+	}
+	for _, childPGKey := range cpgState.GetChildrenPGs() {
+		childPGInfo, err := sched.buildPodGroupInfoFromKey(childPGKey, podGroupInfo)
+		if err != nil {
+			logger.V(5).Info("podGroupSchedulingRecursiveAlgorithm failed (failed to build child PG info)", "podGroup", klog.KObj(podGroupInfo), "childKey", childPGKey, "error", err)
 			return nil, nil, fwk.AsStatus(err)
 		}
 
@@ -967,13 +983,21 @@ func (sched *Scheduler) buildCompositePodGroupInfo(cpg *schedulingv1alpha3.Compo
 
 	isAncestor := func(pgName string) bool {
 		currentName := pgName
-		currentType := framework.PodGroupKeyType
+		state, err := sched.nodeInfoSnapshot.PodGroupStates().Get(namespace, currentName)
+		if err != nil {
+			return false
+		}
+		parentName, hasParent := state.GetParent()
+		if !hasParent {
+			return false
+		}
+		currentName = parentName
 		for {
-			state, err := sched.nodeInfoSnapshot.PodGroupStates().Get(currentType, namespace, currentName)
+			state, err := sched.nodeInfoSnapshot.CompositePodGroupStates().Get(namespace, currentName)
 			if err != nil {
 				break
 			}
-			if currentType == framework.CompositePodGroupKeyType && currentName == name {
+			if currentName == name {
 				return true
 			}
 			parentName, hasParent := state.GetParent()
@@ -981,7 +1005,6 @@ func (sched *Scheduler) buildCompositePodGroupInfo(cpg *schedulingv1alpha3.Compo
 				break
 			}
 			currentName = parentName
-			currentType = framework.CompositePodGroupKeyType
 		}
 		return false
 	}

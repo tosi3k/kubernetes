@@ -964,15 +964,22 @@ func (cache *cacheImpl) forgetPodGroupMember(logger klog.Logger, pod *v1.Pod) {
 
 // PodGroupStates returns the PodGroupStateLister for this cache.
 func (cache *cacheImpl) PodGroupStates() fwk.PodGroupStateLister {
-	return cache
+	return &podGroupStateListerImpl{cache: cache}
 }
 
-func (cache *cacheImpl) GetPodGroupState(namespace string, podGroupName string) (fwk.PodGroupState, error) {
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
+type podGroupStateListerImpl struct {
+	cache *cacheImpl
+}
+
+func (l *podGroupStateListerImpl) Get(namespace, podGroupName string) (fwk.PodGroupState, error) {
+	if !l.cache.genericWorkloadEnabled {
+		return nil, fmt.Errorf("generic workload feature gate is disabled")
+	}
+	l.cache.mu.RLock()
+	defer l.cache.mu.RUnlock()
 
 	key := newPodGroupKey(namespace, podGroupName)
-	podGroupState, exists := cache.podGroupStates[key]
+	podGroupState, exists := l.cache.podGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("pod group state not found for pod group %s/%s", namespace, podGroupName)
 	}
@@ -1010,15 +1017,19 @@ func (l *podGroupListerImpl) Get(namespace, name string) (*schedulingv1alpha3.Po
 
 // CompositePodGroupStates returns the CompositePodGroupStateLister for this cache.
 func (cache *cacheImpl) CompositePodGroupStates() fwk.CompositePodGroupStateLister {
-	return cache
+	return &compositePodGroupStateListerImpl{cache: cache}
 }
 
-func (cache *cacheImpl) GetCompositePodGroupState(namespace string, podGroupName string) (fwk.CompositePodGroupState, error) {
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
+type compositePodGroupStateListerImpl struct {
+	cache *cacheImpl
+}
+
+func (l *compositePodGroupStateListerImpl) Get(namespace string, podGroupName string) (fwk.CompositePodGroupState, error) {
+	l.cache.mu.RLock()
+	defer l.cache.mu.RUnlock()
 
 	key := newPodGroupKey(namespace, podGroupName)
-	cpgs, exists := cache.compositePodGroupStates[key]
+	cpgs, exists := l.cache.compositePodGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("composite pod group state not found for composite pod group %s", key)
 	}

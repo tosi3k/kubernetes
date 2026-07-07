@@ -751,7 +751,7 @@ func Test_AddPodGroupMember(t *testing.T) {
 				return
 			}
 
-			podGroupState, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
+			podGroupState, err := cache.PodGroupStates().Get(tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("Unexpected error getting pod group state: %v", err)
 			}
@@ -843,7 +843,7 @@ func Test_UpdatePodGroupMember(t *testing.T) {
 				return
 			}
 
-			podGroupState, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
+			podGroupState, err := cache.PodGroupStates().Get(newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("Unexpected error getting pod group state: %v", err)
 			}
@@ -861,7 +861,7 @@ func Test_UpdatePodGroupMember(t *testing.T) {
 				t.Errorf("expected pod in AssumedPods: %v, got %v", tt.expectInAssumedPods, inAssumedPods)
 			}
 
-			podGroupKey := newPodGroupKey(framework.PodGroupKeyType, newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
+			podGroupKey := newPodGroupKey(newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
 			gotPod := cache.podGroupStates[podGroupKey].allPods[newPod.UID]
 			if diff := cmp.Diff(tt.newPod, gotPod); diff != "" {
 				t.Errorf("stored pod does not match newPod (-want +got):\n%s", diff)
@@ -946,7 +946,7 @@ func Test_RemovePodGroupMember(t *testing.T) {
 				return
 			}
 
-			podGroupState, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, tt.podToDelete.Namespace, *tt.podToDelete.Spec.SchedulingGroup.PodGroupName)
+			podGroupState, err := cache.PodGroupStates().Get(tt.podToDelete.Namespace, *tt.podToDelete.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("Unexpected error getting pod group state: %v", err)
 			}
@@ -1115,7 +1115,7 @@ func Test_RemovePodGroup(t *testing.T) {
 				t.Error("Expected error getting pod group, but got none")
 			}
 
-			key := newPodGroupKey(framework.PodGroupKeyType, tt.podGroup.Namespace, tt.podGroup.Name)
+			key := newPodGroupKey(tt.podGroup.Namespace, tt.podGroup.Name)
 			pgs, exists := cache.podGroupStates[key]
 			if tt.expectStateExists {
 				if !exists {
@@ -1258,7 +1258,7 @@ func TestBindingPodGroupMember(t *testing.T) {
 				t.Fatalf("AddPod (binding) failed: %v", err)
 			}
 
-			podGroupState, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
+			podGroupState, err := cache.PodGroupStates().Get(tt.pod.Namespace, *tt.pod.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("Unexpected error getting pod group state: %v", err)
 			}
@@ -1451,7 +1451,7 @@ func TestForgetPodGroupMember(t *testing.T) {
 				return
 			}
 
-			pgs, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, "test-ns", *tt.pod.Spec.SchedulingGroup.PodGroupName)
+			pgs, err := cache.PodGroupStates().Get("test-ns", *tt.pod.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("expected pod group state to exist, but got error: %v", err)
 			}
@@ -1627,7 +1627,7 @@ func TestAssumePodGroupMember(t *testing.T) {
 				return
 			}
 
-			pgs, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, "test-ns", *pod.Spec.SchedulingGroup.PodGroupName)
+			pgs, err := cache.PodGroupStates().Get("test-ns", *pod.Spec.SchedulingGroup.PodGroupName)
 			if err != nil {
 				t.Fatalf("unexpected error getting pod group state: %v", err)
 			}
@@ -2098,7 +2098,7 @@ func TestPodGroupPodOperations(t *testing.T) {
 				return
 			}
 
-			pgs, err := cache.PodGroupStates().Get(framework.PodGroupKeyType, "test-ns", groupName)
+			pgs, err := cache.PodGroupStates().Get("test-ns", groupName)
 			if err != nil {
 				t.Fatalf("unexpected error getting pod group state: %v", err)
 			}
@@ -2643,7 +2643,7 @@ func TestSchedulerCache_UpdateSnapshot(t *testing.T) {
 			expected:              []*v1.Node{nodes[1], nodes[0], nodes[2]},
 			expectedUsedPVCCounts: map[string]int{},
 			expectedPodGroupStatesSnapshot: map[podGroupKey]*podGroupStateSnapshot{
-				newPodGroupKey(framework.PodGroupKeyType, "test-ns", "pg-0"): {
+				newPodGroupKey("test-ns", "pg-0"): {
 					podGroupStateData: podGroupStateData{
 						allPods:         map[types.UID]*v1.Pod{"puid-podgroup-0": podsWithPodGroupName[0]},
 						assignedPods:    sets.New[types.UID]("puid-podgroup-0"),
@@ -2651,7 +2651,7 @@ func TestSchedulerCache_UpdateSnapshot(t *testing.T) {
 						assumedPods:     make(map[types.UID]*v1.Pod),
 					},
 				},
-				newPodGroupKey(framework.PodGroupKeyType, "test-ns", "pg-2"): {
+				newPodGroupKey("test-ns", "pg-2"): {
 					podGroupStateData: podGroupStateData{
 						allPods:         map[types.UID]*v1.Pod{"puid-podgroup-2": podsWithPodGroupName[2]},
 						assignedPods:    sets.New[types.UID]("puid-podgroup-2"),

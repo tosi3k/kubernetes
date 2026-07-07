@@ -18,6 +18,7 @@ package gangscheduling
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -387,7 +388,7 @@ type mockPodGroupStateLister struct {
 	err   error
 }
 
-func (m *mockPodGroupStateLister) Get(groupType, namespace, podGroupName string) (fwk.PodGroupState, error) {
+func (m *mockPodGroupStateLister) Get(namespace, podGroupName string) (fwk.PodGroupState, error) {
 	return m.state, m.err
 }
 
@@ -1061,11 +1062,11 @@ func (t *testPodGroupInfo) GetType() string                      { return t.grou
 func (t *testPodGroupInfo) GetKey() string {
 	return fmt.Sprintf("%s/%s/%s", t.groupType, t.namespace, t.name)
 }
-func (t *testPodGroupInfo) GetPodGroup() *schedulingapi.PodGroup {
-	return t.podGroup
-}
 func (t *testPodGroupInfo) GetCompositePodGroup() *schedulingapi.CompositePodGroup {
 	return t.cpg
+}
+func (t *testPodGroupInfo) GetChildren() []fwk.PodGroupInfo {
+	return nil
 }
 
 type testPodGroupState struct {
@@ -1084,13 +1085,44 @@ func (t *testPodGroupState) ScheduledPods() []*v1.Pod            { return nil }
 func (t *testPodGroupState) ScheduledPodsCount() int             { return t.scheduledPodsCount }
 func (t *testPodGroupState) GetParent() (string, bool)           { return t.parent, t.hasParent }
 func (t *testPodGroupState) GetChildren() []string               { return t.children }
+func (t *testPodGroupState) GetChildrenPGs() []string {
+	var pgs []string
+	for _, child := range t.children {
+		if strings.HasPrefix(child, "podgroup/") {
+			pgs = append(pgs, child)
+		}
+	}
+	return pgs
+}
+func (t *testPodGroupState) GetChildrenCPGs() []string {
+	var cpgs []string
+	for _, child := range t.children {
+		if strings.HasPrefix(child, "compositepodgroup/") {
+			cpgs = append(cpgs, child)
+		}
+	}
+	return cpgs
+}
 
 type mapPodGroupStateLister struct {
 	states map[string]*testPodGroupState
 }
 
-func (l *mapPodGroupStateLister) Get(groupType, namespace, podGroupName string) (fwk.PodGroupState, error) {
-	key := fmt.Sprintf("%s/%s/%s", groupType, namespace, podGroupName)
+func (l *mapPodGroupStateLister) Get(namespace, podGroupName string) (fwk.PodGroupState, error) {
+	key := fmt.Sprintf("%s/%s/%s", schedulerframework.PodGroupKeyType, namespace, podGroupName)
+	state, exists := l.states[key]
+	if !exists {
+		return nil, fmt.Errorf("state not found for key %s", key)
+	}
+	return state, nil
+}
+
+type mapCompositePodGroupStateLister struct {
+	states map[string]*testPodGroupState
+}
+
+func (l *mapCompositePodGroupStateLister) Get(namespace, podGroupName string) (fwk.CompositePodGroupState, error) {
+	key := fmt.Sprintf("%s/%s/%s", schedulerframework.CompositePodGroupKeyType, namespace, podGroupName)
 	state, exists := l.states[key]
 	if !exists {
 		return nil, fmt.Errorf("state not found for key %s", key)
@@ -1100,11 +1132,16 @@ func (l *mapPodGroupStateLister) Get(groupType, namespace, podGroupName string) 
 
 type mockSharedListerWithMap struct {
 	fwk.SharedLister
-	podGroupStateLister *mapPodGroupStateLister
+	podGroupStateLister          *mapPodGroupStateLister
+	compositePodGroupStateLister *mapCompositePodGroupStateLister
 }
 
 func (m *mockSharedListerWithMap) PodGroupStates() fwk.PodGroupStateLister {
 	return m.podGroupStateLister
+}
+
+func (m *mockSharedListerWithMap) CompositePodGroupStates() fwk.CompositePodGroupStateLister {
+	return m.compositePodGroupStateLister
 }
 
 func TestCPGHierarchicalScheduling(t *testing.T) {
@@ -1190,30 +1227,34 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())
 
+	states := map[string]*testPodGroupState{
+		"podgroup/default/pg1": {scheduledPodsCount: 2},
+		"podgroup/default/pg2": {scheduledPodsCount: 2},
+		"podgroup/default/pg3": {scheduledPodsCount: 0},
+		"podgroup/default/pg4": {scheduledPodsCount: 1},
+		"podgroup/default/pg5": {scheduledPodsCount: 2},
+		"podgroup/default/pg6": {scheduledPodsCount: 0},
+		"podgroup/default/pg7": {scheduledPodsCount: 0},
+
+		"compositepodgroup/default/cpg-sub1": {
+			children: []string{"podgroup/default/pg1", "podgroup/default/pg2", "podgroup/default/pg3"},
+		},
+		"compositepodgroup/default/cpg-sub2": {
+			children: []string{"podgroup/default/pg4", "podgroup/default/pg5"},
+		},
+		"compositepodgroup/default/cpg-sub3": {
+			children: []string{"podgroup/default/pg6", "podgroup/default/pg7"},
+		},
+		"compositepodgroup/default/cpg-root": {
+			children: []string{"compositepodgroup/default/cpg-sub1", "compositepodgroup/default/cpg-sub2", "compositepodgroup/default/cpg-sub3"},
+		},
+	}
 	mockLister := &mockSharedListerWithMap{
 		podGroupStateLister: &mapPodGroupStateLister{
-			states: map[string]*testPodGroupState{
-				"podgroup/default/pg1": {scheduledPodsCount: 2},
-				"podgroup/default/pg2": {scheduledPodsCount: 2},
-				"podgroup/default/pg3": {scheduledPodsCount: 0},
-				"podgroup/default/pg4": {scheduledPodsCount: 1},
-				"podgroup/default/pg5": {scheduledPodsCount: 2},
-				"podgroup/default/pg6": {scheduledPodsCount: 0},
-				"podgroup/default/pg7": {scheduledPodsCount: 0},
-
-				"compositepodgroup/default/cpg-sub1": {
-					children: []string{"podgroup/default/pg1", "podgroup/default/pg2", "podgroup/default/pg3"},
-				},
-				"compositepodgroup/default/cpg-sub2": {
-					children: []string{"podgroup/default/pg4", "podgroup/default/pg5"},
-				},
-				"compositepodgroup/default/cpg-sub3": {
-					children: []string{"podgroup/default/pg6", "podgroup/default/pg7"},
-				},
-				"compositepodgroup/default/cpg-root": {
-					children: []string{"compositepodgroup/default/cpg-sub1", "compositepodgroup/default/cpg-sub2", "compositepodgroup/default/cpg-sub3"},
-				},
-			},
+			states: states,
+		},
+		compositePodGroupStateLister: &mapCompositePodGroupStateLister{
+			states: states,
 		},
 	}
 	pl.snapshotLister = mockLister
@@ -1301,7 +1342,7 @@ func TestCPGPreEnqueue_Hierarchical(t *testing.T) {
 	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.TopologyAwareWorkloadScheduling, true)
 	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CompositePodGroup, true)
 
-	_, ctx := ktesting.NewTestContext(t)
+	logger, ctx := ktesting.NewTestContext(t)
 	namespace := "default"
 
 	cpgRoot := &schedulingapi.CompositePodGroup{
@@ -1359,7 +1400,7 @@ func TestCPGPreEnqueue_Hierarchical(t *testing.T) {
 	cpgInformer := informerFactory.Scheduling().V1alpha3().CompositePodGroups()
 	for _, cpg := range []*schedulingapi.CompositePodGroup{cpgRoot, cpgSub1, cpgSub2, cpgSub3} {
 		cpgInformer.Informer().GetStore().Add(cpg)
-		cache.AddCompositePodGroup(cpg)
+		cache.AddCompositePodGroup(logger, cpg)
 	}
 	for _, pg := range []*schedulingapi.PodGroup{pg1, pg2, pg3, pg4, pg5, pg6, pg7} {
 		podGroupInformer.Informer().GetStore().Add(pg)
@@ -1452,7 +1493,7 @@ func TestCPGPreEnqueue_BasicWithGangChildren(t *testing.T) {
 	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.TopologyAwareWorkloadScheduling, true)
 	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CompositePodGroup, true)
 
-	_, ctx := ktesting.NewTestContext(t)
+	logger, ctx := ktesting.NewTestContext(t)
 	namespace := "default"
 
 	cpgRoot := &schedulingapi.CompositePodGroup{
@@ -1472,7 +1513,7 @@ func TestCPGPreEnqueue_BasicWithGangChildren(t *testing.T) {
 	cpgInformer := informerFactory.Scheduling().V1alpha3().CompositePodGroups()
 
 	cpgInformer.Informer().GetStore().Add(cpgRoot)
-	cache.AddCompositePodGroup(cpgRoot)
+	cache.AddCompositePodGroup(logger, cpgRoot)
 	podGroupInformer.Informer().GetStore().Add(pg1)
 	podGroupInformer.Informer().GetStore().Add(pg2)
 	cache.AddPodGroup(pg1)

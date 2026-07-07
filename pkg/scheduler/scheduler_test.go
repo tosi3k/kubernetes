@@ -1159,7 +1159,7 @@ func newFramework(ctx context.Context, r frameworkruntime.Registry, profile sche
 		frameworkruntime.WithSnapshotSharedLister(snapshot),
 		frameworkruntime.WithMutableSnapshotLister(snapshot),
 		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(fake.NewClientset(), 0)),
-		frameworkruntime.WithPodGroupManager(internalcache.New(ctx, nil, false)),
+		frameworkruntime.WithPodGroupManager(internalcache.New(ctx, nil, false, false /* CompositePodGroup */)),
 	)
 }
 
