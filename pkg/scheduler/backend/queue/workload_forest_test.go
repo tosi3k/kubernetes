@@ -53,7 +53,7 @@ func TestWorkloadForest_AddPodGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf := newWorkloadForest()
+			wf := newWorkloadForest(true)
 			for _, pg := range tt.podGroupsToAdd {
 				wf.addPodGroup(pg)
 			}
@@ -97,7 +97,7 @@ func TestWorkloadForest_UpdatePodGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf := newWorkloadForest()
+			wf := newWorkloadForest(true)
 			for _, pg := range tt.initialPodGroups {
 				wf.addPodGroup(pg)
 			}
@@ -141,7 +141,7 @@ func TestWorkloadForest_DeletePodGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf := newWorkloadForest()
+			wf := newWorkloadForest(true)
 			for _, pg := range tt.initialPodGroups {
 				wf.addPodGroup(pg)
 			}
@@ -182,12 +182,12 @@ func TestWorkloadForest_GetRootForPod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf := newWorkloadForest()
+			wf := newWorkloadForest(true)
 			for _, pg := range tt.initialPodGroups {
 				wf.addPodGroup(pg)
 			}
 
-			gotPG, gotFound := wf.getRootForPod(tt.pod)
+			gotPG, gotFound := wf.getRootLookupInfoForPod(tt.pod)
 			if wantFound := tt.wantPodGroup != nil; gotFound != wantFound {
 				t.Errorf("Expected found: %v, got: %v", wantFound, gotFound)
 			}
@@ -223,7 +223,7 @@ func TestWorkloadForest_GetPodGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf := newWorkloadForest()
+			wf := newWorkloadForest(true)
 			for _, pg := range tt.initialPodGroups {
 				wf.addPodGroup(pg)
 			}

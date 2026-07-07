@@ -8788,7 +8788,7 @@ func TestPriorityQueue_UpdateCompositePodGroup_Hierarchical(t *testing.T) {
 		updatedRootCPG.Spec.SchedulingPolicy.Gang.MinGroupCount = 5
 		cpgLister.cpgs["ns1/root-cpg"] = updatedRootCPG
 
-		q.UpdateCompositePodGroup(logger, rootCPG, updatedRootCPG)
+		q.UpdateCompositePodGroup(logger, updatedRootCPG)
 
 		// Verify in queue
 		lookupInfo := q.newQueuedCompositePodGroupInfoFromAPI(updatedRootCPG)

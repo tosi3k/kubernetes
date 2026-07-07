@@ -541,7 +541,7 @@ func (sched *Scheduler) updateCompositePodGroup(oldObj, newObj any) {
 	}
 
 	sched.Cache.UpdateCompositePodGroup(logger, oldCPG, newCPG)
-	sched.SchedulingQueue.UpdateCompositePodGroup(logger, oldCPG, newCPG)
+	sched.SchedulingQueue.UpdateCompositePodGroup(logger, newCPG)
 	sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, evt, newCPG, oldCPG, nil)
 	logger.V(4).Info("Update event for composite pod group", "compositePodGroup", klog.KObj(newCPG))
 }
