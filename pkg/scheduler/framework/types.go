@@ -1352,8 +1352,12 @@ func (pgi *PodGroupInfo) GetCompositePodGroup() *schedulingv1alpha3.CompositePod
 	return pgi.CompositePodGroup
 }
 
-func (pgi *PodGroupInfo) GetChildren() []*PodGroupInfo {
-	return pgi.Children
+func (pgi *PodGroupInfo) GetChildren() []fwk.PodGroupInfo {
+	result := make([]fwk.PodGroupInfo, len(pgi.Children))
+	for i, child := range pgi.Children {
+		result[i] = child
+	}
+	return result
 }
 
 // PodInfo is a wrapper to a Pod with additional pre-computed information to

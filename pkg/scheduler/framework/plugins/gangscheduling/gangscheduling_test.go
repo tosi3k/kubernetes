@@ -1048,7 +1048,7 @@ func TestPlacementFeasible(t *testing.T) {
 type testPodGroupInfo struct {
 	namespace       string
 	name            string
-	groupType       string
+	groupType       fwk.GroupKeyType
 	unscheduledPods []*v1.Pod
 	cpg             *schedulingapi.CompositePodGroup
 	podGroup        *schedulingapi.PodGroup
@@ -1058,7 +1058,7 @@ func (t *testPodGroupInfo) GetNamespace() string                 { return t.name
 func (t *testPodGroupInfo) GetName() string                      { return t.name }
 func (t *testPodGroupInfo) GetUnscheduledPods() []*v1.Pod        { return t.unscheduledPods }
 func (t *testPodGroupInfo) GetPodGroup() *schedulingapi.PodGroup { return t.podGroup }
-func (t *testPodGroupInfo) GetType() string                      { return t.groupType }
+func (t *testPodGroupInfo) GetType() fwk.GroupKeyType            { return t.groupType }
 func (t *testPodGroupInfo) GetKey() string {
 	return fmt.Sprintf("%s/%s/%s", t.groupType, t.namespace, t.name)
 }

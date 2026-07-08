@@ -573,7 +573,8 @@ func (pl *GangScheduling) placementFeasible(ctx context.Context, placementCycleS
 
 	scheduled := 0
 	for _, childKey := range cpgState.GetChildrenCPGs() {
-		status, exists := statuses.Status[childKey]
+		key := fmt.Sprintf("%s/%s", fwk.CompositePodGroupKeyType, childKey)
+		status, exists := statuses.Status[key]
 		// If the child is not in the status map, it means its PodGroup was already scheduled.
 		// This can happen if we partially schedule a CPG and then some more pods arrive.
 		if !exists || status.IsSuccess() {
@@ -581,7 +582,8 @@ func (pl *GangScheduling) placementFeasible(ctx context.Context, placementCycleS
 		}
 	}
 	for _, childKey := range cpgState.GetChildrenPGs() {
-		status, exists := statuses.Status[childKey]
+		key := fmt.Sprintf("%s/%s", fwk.PodGroupKeyType, childKey)
+		status, exists := statuses.Status[key]
 		// If the child is not in the status map, it means its PodGroup was already scheduled.
 		// This can happen if we partially schedule a CPG and then some more pods arrive.
 		if !exists || status.IsSuccess() {
