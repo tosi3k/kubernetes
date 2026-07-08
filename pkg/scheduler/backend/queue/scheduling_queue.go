@@ -411,7 +411,7 @@ func newQueuedPodGroupInfoForLookup(pod *v1.Pod) *framework.QueuedPodGroupInfo {
 
 // newQueuedPodGroupInfoFromRootLookup builds a QueuedPodGroupInfo object for lookup.
 // It returns a lookup key for the given (Composite)PodGroup.
-func (p *PriorityQueue) newQueuedPodGroupInfoFromRootLookup(pInfo *framework.QueuedPodInfo, rootLookup framework.QueuedEntityInfo) *framework.QueuedPodGroupInfo {
+func (p *PriorityQueue) newQueuedPodGroupInfoFromRootLookup(pInfo *framework.QueuedPodInfo, rootLookup *framework.QueuedPodGroupInfo) *framework.QueuedPodGroupInfo {
 	rootInfo := p.workloadForest.buildQueuedPodGroupInfo(rootLookup)
 	if rootInfo == nil {
 		return nil
@@ -1149,12 +1149,7 @@ func (p *PriorityQueue) AddAttemptedPodGroupIfNeeded(logger klog.Logger, pgInfo 
 		return nil
 	}
 
-	var rootInfo *framework.QueuedPodGroupInfo
-	if pg := pgInfo.GetPodGroup(); pg != nil {
-		rootInfo = p.workloadForest.buildQueuedPodGroupInfo(pg)
-	} else if cpg := pgInfo.GetCompositePodGroup(); cpg != nil {
-		rootInfo = p.workloadForest.buildQueuedPodGroupInfo(cpg)
-	}
+	rootInfo := p.workloadForest.buildQueuedPodGroupInfo(pgInfo)
 	if rootInfo == nil {
 		// This case shouldn't happen, because if the pod group was removed,
 		// pods should be put in the incompletePodGroupPods first, making pendingPods empty.

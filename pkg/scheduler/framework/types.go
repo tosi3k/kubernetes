@@ -1318,6 +1318,7 @@ type PodGroupInfo struct {
 	// PodGroup is a PodGroup API object.
 	PodGroup *schedulingv1alpha3.PodGroup
 	// CompositePodGroup is a CompositePodGroup API object.
+	// It should be set only when CompositePodGroup feature is enabled.
 	CompositePodGroup *schedulingv1alpha3.CompositePodGroup
 	// Children are the child pod groups of this pod group. Only composite pod groups have children.
 	Children []*PodGroupInfo
