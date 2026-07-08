@@ -293,10 +293,12 @@ func TestValidatePodGroup(t *testing.T) {
 					Namespace: tt.podGroup.Namespace,
 					PodGroup:  tt.podGroup,
 				},
+				QueuedPodInfos: make(map[string][]*framework.QueuedPodInfo),
 			}
 			for _, pod := range tt.pods {
 				podGroupInfo.UnscheduledPods = append(podGroupInfo.UnscheduledPods, pod)
-				podGroupInfo.QueuedPodInfos = append(podGroupInfo.QueuedPodInfos,
+				key := fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, tt.podGroup.Namespace, tt.podGroup.Name)
+				podGroupInfo.QueuedPodInfos[key] = append(podGroupInfo.QueuedPodInfos[key],
 					&framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}})
 			}
 			err := sched.validatePodGroup(podGroupInfo)
@@ -323,9 +325,9 @@ func TestSkipPodGroupPodSchedule(t *testing.T) {
 	qInfo3 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p3}}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2, qInfo3},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2, qInfo3}},
 		PodGroupInfo: &framework.PodGroupInfo{
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2, p3},
 		},
 	}
@@ -367,11 +369,11 @@ func TestSkipPodGroupPodSchedule(t *testing.T) {
 
 	sched.skipPodGroupPodSchedule(ctx, schedFwk, podGroupInfo)
 
-	if len(podGroupInfo.QueuedPodInfos) != 1 {
-		t.Errorf("Expected 1 queued pod left, got %d", len(podGroupInfo.QueuedPodInfos))
+	if podGroupInfo.Size() != 1 {
+		t.Errorf("Expected 1 queued pod left, got %d", podGroupInfo.Size())
 	}
-	if podGroupInfo.QueuedPodInfos[0].Pod.Name != "p1" {
-		t.Errorf("Expected p1 to be left in queued pods, got %s", podGroupInfo.QueuedPodInfos[0].Pod.Name)
+	if podGroupInfo.QueuedPodInfos["podgroup/default/pg"][0].Pod.Name != "p1" {
+		t.Errorf("Expected p1 to be left in queued pods, got %s", podGroupInfo.QueuedPodInfos["podgroup/default/pg"][0].Pod.Name)
 	}
 	if len(podGroupInfo.UnscheduledPods) != 1 {
 		t.Errorf("Expected 1 unscheduled pod left, got %d", len(podGroupInfo.UnscheduledPods))
@@ -392,11 +394,11 @@ func TestPodGroupCycle_UpdateSnapshotError(t *testing.T) {
 	}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
 			Namespace:       "default",
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2},
 			PodGroup:        testPodGroup,
 		},
@@ -475,11 +477,11 @@ func TestPodGroupCycle_FillsPodResultsOnFewerResults(t *testing.T) {
 	qInfo3 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p3}}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2, qInfo3},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2, qInfo3}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
 			Namespace:       "default",
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2, p3},
 			PodGroup:        testPodGroup,
 		},
@@ -635,11 +637,11 @@ func TestPodGroupCycle_PodGroupPostFilter(t *testing.T) {
 			qInfo2 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p2}}
 
 			podGroupInfo := &framework.QueuedPodGroupInfo{
-				QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2},
+				QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2}},
 				PodGroupInfo: &framework.PodGroupInfo{
 					Name:            "pg",
 					Namespace:       "default",
-					Type:            framework.PodGroupKeyType,
+					Type:            fwk.PodGroupKeyType,
 					UnscheduledPods: []*v1.Pod{p1, p2},
 					PodGroup:        testPodGroup,
 				},
@@ -746,10 +748,10 @@ func TestPodGroupSchedulingAlgorithm(t *testing.T) {
 	qInfo3 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p3}}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2, qInfo3},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2, qInfo3}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2, p3},
 		},
 	}
@@ -1138,8 +1140,8 @@ func TestPodGroupSchedulingAlgorithm(t *testing.T) {
 				if len(tt.expectedPodStatus) != len(result.podResults) {
 					t.Errorf("Expected %d pod results, got %d", len(tt.expectedPodStatus), len(result.podResults))
 				}
-				for i, podResult := range result.podResults {
-					podName := podGroupInfo.QueuedPodInfos[i].Pod.Name
+				for _, podResult := range result.podResults {
+					podName := podResult.pod.Name
 					if expected, ok := tt.expectedPodStatus[podName]; ok {
 						if podResult.status.Code() != expected.Code() {
 							t.Errorf("Expected pod %s status code: %v, got: %v", podName, expected.Code(), podResult.status.Code())
@@ -1203,11 +1205,11 @@ func TestSubmitPodGroupAlgorithmResult(t *testing.T) {
 	}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2, qInfo3},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2, qInfo3}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
 			Namespace:       "default",
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2, p3},
 		},
 	}
@@ -1710,7 +1712,7 @@ func TestSubmitPodGroupAlgorithmResult(t *testing.T) {
 			podGroupCycleState := framework.NewCycleState()
 
 			for i := range tt.algorithmResult.podResults {
-				pod := podGroupInfo.QueuedPodInfos[i].Pod
+				pod := podGroupInfo.UnscheduledPods[i]
 				placementCycleState := framework.NewCycleState()
 				placementCycleState.SetPodGroupSchedulingCycle(podGroupCycleState)
 				podCtx := initPodSchedulingContext(ctx, pod, placementCycleState, runAllPostFilters)
@@ -1722,7 +1724,7 @@ func TestSubmitPodGroupAlgorithmResult(t *testing.T) {
 			if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*200, wait.ForeverTestTimeout, false, func(ctx context.Context) (bool, error) {
 				lock.Lock()
 				defer lock.Unlock()
-				return len(boundPods)+len(preemptingPods)+len(failedPods) == len(podGroupInfo.QueuedPodInfos), nil
+				return len(boundPods)+len(preemptingPods)+len(failedPods) == podGroupInfo.Size(), nil
 			}); err != nil {
 				t.Errorf("Failed waiting for all pods to be either bound or failed")
 			}
@@ -2090,7 +2092,7 @@ func TestUpdatePodGroupCondition(t *testing.T) {
 					Namespace: tt.namespace,
 					Name:      tt.podGroupName,
 					PodGroup:  tt.existingPodGroup,
-					Type:      framework.PodGroupKeyType,
+					Type:      fwk.PodGroupKeyType,
 				},
 			}
 			sched.updatePodGroupCondition(ctx, podGroupInfo, tt.condition)
@@ -2457,13 +2459,13 @@ func TestPodGroupSchedulingPlacementAlgorithm(t *testing.T) {
 			}
 
 			pgInfo := &framework.QueuedPodGroupInfo{
-				QueuedPodInfos: []*framework.QueuedPodInfo{
+				QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {
 					{
 						PodInfo: &framework.PodInfo{Pod: podGroupPod},
 					},
-				},
+				}},
 				PodGroupInfo: &framework.PodGroupInfo{
-					Type:            framework.PodGroupKeyType,
+					Type:            fwk.PodGroupKeyType,
 					UnscheduledPods: []*v1.Pod{podGroupPod},
 				},
 			}
@@ -2634,13 +2636,13 @@ func TestPodGroupSchedulingPlacementAlgorithm_Scoring(t *testing.T) {
 			}
 
 			pgInfo := &framework.QueuedPodGroupInfo{
-				QueuedPodInfos: []*framework.QueuedPodInfo{
+				QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {
 					{
 						PodInfo: &framework.PodInfo{Pod: podGroupPod},
 					},
-				},
+				}},
 				PodGroupInfo: &framework.PodGroupInfo{
-					Type:            framework.PodGroupKeyType,
+					Type:            fwk.PodGroupKeyType,
 					UnscheduledPods: []*v1.Pod{podGroupPod},
 				},
 			}
@@ -2808,11 +2810,11 @@ func TestPlacementCycleStateLifecycle(t *testing.T) {
 	}
 
 	pgInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {
 			{PodInfo: &framework.PodInfo{Pod: podGroupPod}},
-		},
+		}},
 		PodGroupInfo: &framework.PodGroupInfo{
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{podGroupPod},
 		},
 	}
@@ -2851,11 +2853,11 @@ func TestPodGroupCycle_NominatedNodes(t *testing.T) {
 	qInfo2 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p2}}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
 			Namespace:       "default",
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2},
 			PodGroup:        testPodGroup,
 		},
@@ -2968,7 +2970,7 @@ func TestScheduleOnePodGroup_PodGroupNotFound(t *testing.T) {
 	qInfo2 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p2}}
 
 	podGroupInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Name:            "pg",
 			Namespace:       "default",
@@ -3075,11 +3077,11 @@ func TestCPGHierarchicalScheduling_ScheduleOnePodGroup(t *testing.T) {
 	qInfo3 := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: p3}}
 
 	cpgRootInfo := &framework.QueuedPodGroupInfo{
-		QueuedPodInfos: []*framework.QueuedPodInfo{qInfo1, qInfo2, qInfo3},
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/default/pg": {qInfo1, qInfo2, qInfo3}},
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:       namespace,
 			Name:            "cpg-root",
-			Type:            framework.CompositePodGroupKeyType,
+			Type:            fwk.CompositePodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{p1, p2, p3},
 		},
 		QueueingParams: framework.QueueingParams{
@@ -3300,7 +3302,7 @@ func TestCPGHierarchicalScheduling_Internal(t *testing.T) {
 	pg7 := createPG("pg7", 3, "cpg-sub3")
 
 	var allPods []*v1.Pod
-	var queuedPodInfos []*framework.QueuedPodInfo
+	queuedPodInfos := make(map[string][]*framework.QueuedPodInfo)
 
 	createPods := func(pgName string, count int) {
 		for i := 0; i < count; i++ {
@@ -3309,7 +3311,8 @@ func TestCPGHierarchicalScheduling_Internal(t *testing.T) {
 				PodGroupName(pgName).Priority(100).SchedulerName("test-scheduler").Obj()
 
 			allPods = append(allPods, pod)
-			queuedPodInfos = append(queuedPodInfos, &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}})
+			key := fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, ns, pgName)
+			queuedPodInfos[key] = append(queuedPodInfos[key], &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}})
 
 		}
 	}
@@ -3327,7 +3330,7 @@ func TestCPGHierarchicalScheduling_Internal(t *testing.T) {
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         ns,
 			Name:              "cpg-root",
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			UnscheduledPods:   allPods,
 			CompositePodGroup: rootCPG,
 		},
@@ -3528,7 +3531,7 @@ func TestCPGMinGroupCount_Internal(t *testing.T) {
 	pg2 := createPG("pg2", 3, "cpg-root")
 	pg3 := createPG("pg3", 3, "cpg-root")
 
-	var queuedPodInfos []*framework.QueuedPodInfo
+	queuedPodInfos := make(map[string][]*framework.QueuedPodInfo)
 	var allPods []*v1.Pod
 
 	createPods := func(pgName string, count int, schedulable bool) {
@@ -3551,7 +3554,8 @@ func TestCPGMinGroupCount_Internal(t *testing.T) {
 			}
 
 			podInfo := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}}
-			queuedPodInfos = append(queuedPodInfos, podInfo)
+			key := fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, ns, pgName)
+			queuedPodInfos[key] = append(queuedPodInfos[key], podInfo)
 			allPods = append(allPods, pod)
 			cache.AddPod(logger, pod)
 		}
@@ -3629,7 +3633,7 @@ func TestCPGMinGroupCount_Internal(t *testing.T) {
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         ns,
 			Name:              "cpg-root",
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			UnscheduledPods:   allPods,
 			CompositePodGroup: rootCPG,
 		},
@@ -3741,7 +3745,7 @@ func TestCPGBasicWithGangChildren_Internal(t *testing.T) {
 	pg1 := createPG("pg1", 3, "cpg-root")
 	pg2 := createPG("pg2", 3, "cpg-root")
 
-	var queuedPodInfos []*framework.QueuedPodInfo
+	queuedPodInfos := make(map[string][]*framework.QueuedPodInfo)
 	var allPods []*v1.Pod
 
 	createPods := func(pgName string, count int, schedulable bool) {
@@ -3764,7 +3768,8 @@ func TestCPGBasicWithGangChildren_Internal(t *testing.T) {
 			}
 
 			podInfo := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}}
-			queuedPodInfos = append(queuedPodInfos, podInfo)
+			key := fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, ns, pgName)
+			queuedPodInfos[key] = append(queuedPodInfos[key], podInfo)
 			allPods = append(allPods, pod)
 		}
 	}
@@ -3837,7 +3842,7 @@ func TestCPGBasicWithGangChildren_Internal(t *testing.T) {
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         ns,
 			Name:              "cpg-root",
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			UnscheduledPods:   allPods,
 			CompositePodGroup: rootCPG,
 		},

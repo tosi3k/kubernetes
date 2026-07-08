@@ -797,11 +797,6 @@ func (pqi *QueuedPodInfo) SetFlushTimestamp(t time.Time) {
 	pqi.FlushTimestamp = t
 }
 
-const (
-	PodGroupKeyType          = "podgroup"
-	CompositePodGroupKeyType = "compositepodgroup"
-)
-
 // QueuedPodGroupInfo is a PodGroupInfo wrapper with additional information related to
 // the pod group's status in the scheduling queue and stores all queued pods from that pod group.
 type QueuedPodGroupInfo struct {
@@ -813,11 +808,11 @@ type QueuedPodGroupInfo struct {
 }
 
 func (pgqi *QueuedPodGroupInfo) Type() string {
-	return pgqi.GetType()
+	return string(pgqi.GetType())
 }
 
 func pgKey(namespace, name string) string {
-	return fmt.Sprintf("%s/%s/%s", PodGroupKeyType, namespace, name)
+	return fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, namespace, name)
 }
 
 // AddPod adds a pod to the queued pod group info, if the pod belongs to the pod group.
@@ -1091,7 +1086,7 @@ func (pgqi *QueuedPodGroupInfo) AddPodGroup(pg *schedulingv1alpha3.PodGroup) {
 			pgInfo := &PodGroupInfo{
 				Namespace: pg.Namespace,
 				Name:      pg.Name,
-				Type:      PodGroupKeyType,
+				Type:      fwk.PodGroupKeyType,
 				PodGroup:  pg,
 				Children:  make([]*PodGroupInfo, 0),
 			}
@@ -1192,7 +1187,7 @@ func (pgqi *QueuedPodGroupInfo) AddCompositePodGroup(cpg *schedulingv1alpha3.Com
 			cpgInfo := &PodGroupInfo{
 				Namespace:         cpg.Namespace,
 				Name:              cpg.Name,
-				Type:              CompositePodGroupKeyType,
+				Type:              fwk.CompositePodGroupKeyType,
 				CompositePodGroup: cpg,
 				Children:          make([]*PodGroupInfo, 0),
 			}
@@ -1285,7 +1280,7 @@ func newQueuedCompositePodGroupInfo(cpg *schedulingv1alpha3.CompositePodGroup) *
 		PodGroupInfo: &PodGroupInfo{
 			Namespace:         cpg.Namespace,
 			Name:              cpg.Name,
-			Type:              CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			CompositePodGroup: cpg,
 			Children:          make([]*PodGroupInfo, 0),
 		},
@@ -1298,7 +1293,7 @@ func newQueuedPodGroupInfo(pg *schedulingv1alpha3.PodGroup) *QueuedPodGroupInfo 
 		PodGroupInfo: &PodGroupInfo{
 			Namespace: pg.Namespace,
 			Name:      pg.Name,
-			Type:      PodGroupKeyType,
+			Type:      fwk.PodGroupKeyType,
 			PodGroup:  pg,
 			Children:  make([]*PodGroupInfo, 0),
 		},
@@ -1314,7 +1309,7 @@ type PodGroupInfo struct {
 	// Name is a name of this pod group.
 	Name string
 	// Type is a type of the pod group: either composite pod group or pod group.
-	Type string
+	Type fwk.GroupKeyType
 	// UnscheduledPods are pods that are currently being considered for scheduling.
 	// It can be useful to also retrieve the scheduled (assumed or assigned) pods.
 	// PodGroupManager.PodGroupState can be used for that.
@@ -1336,7 +1331,7 @@ func (pgi *PodGroupInfo) GetNamespace() string {
 	return pgi.Namespace
 }
 
-func (pgi *PodGroupInfo) GetType() string {
+func (pgi *PodGroupInfo) GetType() fwk.GroupKeyType {
 	return pgi.Type
 }
 

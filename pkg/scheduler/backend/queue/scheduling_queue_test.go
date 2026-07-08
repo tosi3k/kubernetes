@@ -3661,7 +3661,9 @@ func TestGatedPodFlushFrequency(t *testing.T) {
 			name: "queued pod group",
 			entityInfo: &framework.QueuedPodGroupInfo{
 				PodGroupInfo:   &framework.PodGroupInfo{Namespace: gatedPod.GetNamespace(), Name: "pg", UnscheduledPods: []*v1.Pod{gatedPod.Pod}},
-				QueuedPodInfos: []*framework.QueuedPodInfo{{PodInfo: gatedPod, QueueingParams: framework.QueueingParams{UnschedulablePlugins: sets.New("foo")}}},
+				QueuedPodInfos: map[string][]*framework.QueuedPodInfo{
+					"podgroup/test/pg": {{PodInfo: gatedPod, QueueingParams: framework.QueueingParams{UnschedulablePlugins: sets.New("foo")}}},
+				},
 			},
 		},
 	}
@@ -8079,7 +8081,7 @@ func TestPriorityQueue_AddCompositePodGroup_RootQueuesPods(t *testing.T) {
 		t.Errorf("Expected root-cpg to exist in activeQ")
 	} else {
 		queuedInfo := entity.(*framework.QueuedPodGroupInfo)
-		if queuedInfo.Name != "root-cpg" || queuedInfo.Type() != framework.CompositePodGroupKeyType {
+		if queuedInfo.Name != "root-cpg" || queuedInfo.Type() != string(fwk.CompositePodGroupKeyType) {
 			t.Errorf("Expected root-cpg queued info, got name %q type %s", queuedInfo.Name, queuedInfo.Type())
 		}
 		if len(queuedInfo.QueuedPodInfos) != 1 || queuedInfo.QueuedPodInfos[0].Pod.Name != "pod1" {
@@ -8201,7 +8203,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootRootExists(t *testing.T) {
 		t.Errorf("Expected root-cpg to exist in activeQ")
 	} else {
 		queuedInfo := entity.(*framework.QueuedPodGroupInfo)
-		if queuedInfo.Name != "root-cpg" || queuedInfo.Type() != framework.CompositePodGroupKeyType {
+		if queuedInfo.Name != "root-cpg" || queuedInfo.Type() != string(fwk.CompositePodGroupKeyType) {
 			t.Errorf("Expected root-cpg queued info, got name %q type %s", queuedInfo.Name, queuedInfo.Type())
 		}
 		if len(queuedInfo.QueuedPodInfos) != 1 || queuedInfo.QueuedPodInfos[0].Pod.Name != "pod1" {

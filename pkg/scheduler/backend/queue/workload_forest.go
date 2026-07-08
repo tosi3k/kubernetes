@@ -20,6 +20,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
 	"k8s.io/apimachinery/pkg/util/sets"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -152,7 +153,7 @@ func (wf *workloadForest) getRootLookupInfoForPodGroup(podGroup *schedulingv1alp
 			PodGroupInfo: &framework.PodGroupInfo{
 				Namespace: podGroup.Namespace,
 				Name:      podGroup.Name,
-				Type:      framework.PodGroupKeyType,
+				Type:      fwk.PodGroupKeyType,
 			},
 		}, true
 	}
@@ -166,7 +167,7 @@ func (wf *workloadForest) getRootLookupInfoForCPG(cpg *schedulingv1alpha3.Compos
 			PodGroupInfo: &framework.PodGroupInfo{
 				Namespace: cpg.Namespace,
 				Name:      cpg.Name,
-				Type:      framework.CompositePodGroupKeyType,
+				Type:      fwk.CompositePodGroupKeyType,
 			},
 		}, true
 	}
@@ -188,7 +189,7 @@ func (wf *workloadForest) getRootLookupInfoForParentCPG(parentName, namespace st
 				PodGroupInfo: &framework.PodGroupInfo{
 					Namespace: cpg.Namespace,
 					Name:      cpg.Name,
-					Type:      framework.CompositePodGroupKeyType,
+					Type:      fwk.CompositePodGroupKeyType,
 				},
 			}, true
 		}
@@ -243,7 +244,7 @@ func (wf *workloadForest) buildPodGroupInfo(root any) *framework.PodGroupInfo {
 		return &framework.PodGroupInfo{
 			Namespace:       r.Namespace,
 			Name:            r.Name,
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			PodGroup:        r,
 			UnscheduledPods: []*v1.Pod{},
 			Children:        make([]*framework.PodGroupInfo, 0),
@@ -252,7 +253,7 @@ func (wf *workloadForest) buildPodGroupInfo(root any) *framework.PodGroupInfo {
 		pgi := &framework.PodGroupInfo{
 			Namespace:         r.Namespace,
 			Name:              r.Name,
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			CompositePodGroup: r,
 			Children:          make([]*framework.PodGroupInfo, 0),
 			UnscheduledPods:   []*v1.Pod{},

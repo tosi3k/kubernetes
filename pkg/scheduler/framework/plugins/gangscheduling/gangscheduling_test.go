@@ -1024,7 +1024,7 @@ func TestPlacementFeasible(t *testing.T) {
 				Name:            pgName,
 				UnscheduledPods: tc.unscheduledPods,
 				PodGroup:        pg,
-				Type:            schedulerframework.PodGroupKeyType,
+				Type:            fwk.PodGroupKeyType,
 			}
 
 			cycleState := schedulerframework.NewCycleState()
@@ -1109,7 +1109,7 @@ type mapPodGroupStateLister struct {
 }
 
 func (l *mapPodGroupStateLister) Get(namespace, podGroupName string) (fwk.PodGroupState, error) {
-	key := fmt.Sprintf("%s/%s/%s", schedulerframework.PodGroupKeyType, namespace, podGroupName)
+	key := fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, namespace, podGroupName)
 	state, exists := l.states[key]
 	if !exists {
 		return nil, fmt.Errorf("state not found for key %s", key)
@@ -1122,7 +1122,7 @@ type mapCompositePodGroupStateLister struct {
 }
 
 func (l *mapCompositePodGroupStateLister) Get(namespace, podGroupName string) (fwk.CompositePodGroupState, error) {
-	key := fmt.Sprintf("%s/%s/%s", schedulerframework.CompositePodGroupKeyType, namespace, podGroupName)
+	key := fmt.Sprintf("%s/%s/%s", fwk.CompositePodGroupKeyType, namespace, podGroupName)
 	state, exists := l.states[key]
 	if !exists {
 		return nil, fmt.Errorf("state not found for key %s", key)
@@ -1267,59 +1267,59 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 	}
 
 	// Step 1: Run PlacementFeasible for leaf PodGroups
-	statusPG1 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg1", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg1})
+	statusPG1 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg1", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg1})
 	if statusPG1 != nil {
 		t.Errorf("Expected success for pg1, got code: %v", statusPG1.Code())
 	}
 
-	statusPG2 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg2", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg2})
+	statusPG2 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg2", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg2})
 	if statusPG2 != nil {
 		t.Errorf("Expected success for pg2, got code: %v", statusPG2.Code())
 	}
 
-	statusPG3 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg3", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg3})
+	statusPG3 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg3", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg3})
 	if statusPG3 == nil || statusPG3.Code() != fwk.Unschedulable {
 		t.Errorf("Expected pg3 to be Unschedulable, got: %v", statusPG3)
 	}
 
-	statusPG4 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg4", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg4})
+	statusPG4 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg4", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg4})
 	if statusPG4 != nil {
 		t.Errorf("Expected success for pg4, got code: %v", statusPG4.Code())
 	}
 
-	statusPG5 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg5", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg5})
+	statusPG5 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg5", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg5})
 	if statusPG5 != nil {
 		t.Errorf("Expected success for pg5, got code: %v", statusPG5.Code())
 	}
 
-	statusPG6 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg6", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg6})
+	statusPG6 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg6", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg6})
 	if statusPG6 == nil || statusPG6.Code() != fwk.Unschedulable {
 		t.Errorf("Expected pg6 to be Unschedulable, got: %v", statusPG6)
 	}
 
-	statusPG7 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg7", groupType: schedulerframework.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg7})
+	statusPG7 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "pg7", groupType: fwk.PodGroupKeyType, unscheduledPods: []*v1.Pod{{}}, podGroup: pg7})
 	if statusPG7 == nil || statusPG7.Code() != fwk.Unschedulable {
 		t.Errorf("Expected pg7 to be Unschedulable, got: %v", statusPG7)
 	}
 
 	// Step 2: Run PlacementFeasible for intermediate CompositePodGroups
-	statusSub1 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub1", groupType: schedulerframework.CompositePodGroupKeyType})
+	statusSub1 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub1", groupType: fwk.CompositePodGroupKeyType})
 	if statusSub1 != nil {
 		t.Errorf("Expected success for cpg-sub1, got code: %v", statusSub1.Code())
 	}
 
-	statusSub2 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub2", groupType: schedulerframework.CompositePodGroupKeyType})
+	statusSub2 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub2", groupType: fwk.CompositePodGroupKeyType})
 	if statusSub2 != nil {
 		t.Errorf("Expected success for cpg-sub2, got code: %v", statusSub2.Code())
 	}
 
-	statusSub3 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub3", groupType: schedulerframework.CompositePodGroupKeyType})
+	statusSub3 := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-sub3", groupType: fwk.CompositePodGroupKeyType})
 	if statusSub3 == nil || statusSub3.Code() != fwk.Unschedulable {
 		t.Errorf("Expected cpg-sub3 to be Unschedulable, got: %v", statusSub3)
 	}
 
 	// Step 3: Run PlacementFeasible for root CompositePodGroup
-	statusRoot := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-root", groupType: schedulerframework.CompositePodGroupKeyType})
+	statusRoot := pl.PlacementFeasible(ctx, newCycleState(), &testPodGroupInfo{namespace: namespace, name: "cpg-root", groupType: fwk.CompositePodGroupKeyType})
 	if statusRoot != nil {
 		t.Errorf("Expected success for cpg-root, got code: %v", statusRoot.Code())
 	}

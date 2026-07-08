@@ -562,7 +562,7 @@ func (pl *GangScheduling) PlacementFeasible(ctx context.Context, placementCycleS
 }
 
 func (pl *GangScheduling) placementFeasible(ctx context.Context, placementCycleState fwk.PlacementCycleState, podGroupInfo fwk.PodGroupInfo, statuses *PlacementFeasibleStatuses) *fwk.Status {
-	if podGroupInfo.GetType() == framework.PodGroupKeyType {
+	if podGroupInfo.GetType() == fwk.PodGroupKeyType {
 		return pl.placementFeasibleForPodGroup(ctx, placementCycleState, podGroupInfo)
 	}
 

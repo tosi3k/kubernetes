@@ -643,6 +643,14 @@ func (h HostPortInfo) sanitize(ip, protocol *string) {
 	}
 }
 
+// GroupKeyType is the type of a pod group.
+type GroupKeyType string
+
+const (
+	PodGroupKeyType          GroupKeyType = "podgroup"
+	CompositePodGroupKeyType GroupKeyType = "compositepodgroup"
+)
+
 // PodGroupInfo is a wrapper around the PodGroup API object together with a list of unscheduled pods that belong to the pod group.
 // Typically used as an input to pod group scheduling cycle plugins.
 type PodGroupInfo interface {
@@ -656,7 +664,7 @@ type PodGroupInfo interface {
 	// GetNamespace returns the namespace the pod group belongs to.
 	GetNamespace() string
 	// GetType returns the type of the pod group.
-	GetType() string
+	GetType() GroupKeyType
 	// GetKey returns the key identifying the pod group.
 	GetKey() string
 	// GetPodGroup returns the PodGroup API object or nil if the group is a composite pod group.

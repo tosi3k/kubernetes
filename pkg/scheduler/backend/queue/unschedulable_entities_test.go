@@ -248,11 +248,11 @@ func TestUnschedulablePodGroups_Unified(t *testing.T) {
 			Namespace: "ns1",
 			Name:      "pg1",
 		},
-		QueuedPodInfos: []*framework.QueuedPodInfo{
+		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{"podgroup/ns1/pg1": {
 			{
 				PodInfo: &framework.PodInfo{Pod: st.MakePod().Name("p1").Namespace("ns1").PodGroupName("pg1").Obj()},
 			},
-		},
+		}},
 	}
 
 	ue.addOrUpdate(pgInfo, false, "test")

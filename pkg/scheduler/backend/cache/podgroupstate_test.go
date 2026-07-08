@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
@@ -68,9 +69,9 @@ func TestPodGroupState_Clone(t *testing.T) {
 	pgs.addPod(pod2)
 	pgs.assumePod(pod2)
 
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-pg")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-pg")
 	pgs.parent = &parentKey
-	pgs.children = sets.New(newPodGroupKey(framework.PodGroupKeyType, "ns1", "child1"), newPodGroupKey(framework.PodGroupKeyType, "ns1", "child2"))
+	pgs.children = sets.New(newPodGroupKey(fwk.PodGroupKeyType, "ns1", "child1"), newPodGroupKey(fwk.PodGroupKeyType, "ns1", "child2"))
 
 	snap := pgs.snapshot()
 
@@ -104,11 +105,11 @@ func TestPodGroupState_Clone(t *testing.T) {
 
 	// Mutating the clone's children/parent does not affect the original.
 	snap.parent = nil
-	snap.children.Insert(newPodGroupKey(framework.PodGroupKeyType, "ns1", "child3"))
+	snap.children.Insert(newPodGroupKey(fwk.PodGroupKeyType, "ns1", "child3"))
 	if pgs.parent == nil {
 		t.Error("mutation to clone's parent should not affect original's parent")
 	}
-	if pgs.children.Has(newPodGroupKey(framework.PodGroupKeyType, "ns1", "child3")) {
+	if pgs.children.Has(newPodGroupKey(fwk.PodGroupKeyType, "ns1", "child3")) {
 		t.Error("mutation to clone's children should not affect original's children")
 	}
 
@@ -280,7 +281,7 @@ func TestPodGroupState_ParentAndChildren(t *testing.T) {
 	}
 
 	// 2. Set parent and test GetParent
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-cpg")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-cpg")
 	pgs.parent = &parentKey
 	parent, ok := pgs.GetParent()
 	if !ok || parent != "parent-cpg" {
@@ -288,8 +289,8 @@ func TestPodGroupState_ParentAndChildren(t *testing.T) {
 	}
 
 	// 3. Set children and test GetChildren
-	childKey1 := newPodGroupKey(framework.PodGroupKeyType, "ns1", "child1")
-	childKey2 := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "child2")
+	childKey1 := newPodGroupKey(fwk.PodGroupKeyType, "ns1", "child1")
+	childKey2 := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "child2")
 	pgs.children.Insert(childKey1)
 	pgs.children.Insert(childKey2)
 

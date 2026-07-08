@@ -909,7 +909,7 @@ func (sched *Scheduler) podGroupSchedulingRecursiveAlgorithm(ctx context.Context
 
 func (sched *Scheduler) buildPodGroupInfoFromKey(key string, parentInfo *framework.QueuedPodGroupInfo) (*framework.QueuedPodGroupInfo, error) {
 	typ, namespace, name := unpackKey(key)
-	if typ == framework.CompositePodGroupKeyType {
+	if typ == fwk.CompositePodGroupKeyType {
 		cpg, err := sched.nodeInfoSnapshot.CompositePodGroups().Get(namespace, name)
 		if err != nil {
 			return nil, err
@@ -924,16 +924,16 @@ func (sched *Scheduler) buildPodGroupInfoFromKey(key string, parentInfo *framewo
 	return sched.buildPodGroupInfo(pg, parentInfo)
 }
 
-func unpackKey(key string) (string, string, string) {
+func unpackKey(key string) (fwk.GroupKeyType, string, string) {
 	parts := strings.Split(key, "/")
 	if len(parts) != 3 {
-		return framework.PodGroupKeyType, "", ""
+		return fwk.PodGroupKeyType, "", ""
 	}
-	return parts[0], parts[1], parts[2]
+	return fwk.GroupKeyType(parts[0]), parts[1], parts[2]
 }
 
 func (sched *Scheduler) buildPodGroupInfo(podGroup *schedulingv1alpha3.PodGroup, parentInfo *framework.QueuedPodGroupInfo) (*framework.QueuedPodGroupInfo, error) {
-	if parentInfo != nil && parentInfo.Type() == framework.PodGroupKeyType {
+	if parentInfo != nil && parentInfo.Type() == string(fwk.PodGroupKeyType) {
 		return nil, fmt.Errorf("parent is a PodGroup, which cannot have children")
 	}
 
@@ -944,7 +944,7 @@ func (sched *Scheduler) buildPodGroupInfo(podGroup *schedulingv1alpha3.PodGroup,
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace: namespace,
 			Name:      name,
-			Type:      framework.PodGroupKeyType,
+			Type:      fwk.PodGroupKeyType,
 			PodGroup:  podGroup,
 		},
 		QueueingParams: *parentInfo.QueueingParams.DeepCopy(),
@@ -965,7 +965,7 @@ func (sched *Scheduler) buildPodGroupInfo(podGroup *schedulingv1alpha3.PodGroup,
 }
 
 func (sched *Scheduler) buildCompositePodGroupInfo(cpg *schedulingv1alpha3.CompositePodGroup, parentInfo *framework.QueuedPodGroupInfo) (*framework.QueuedPodGroupInfo, error) {
-	if parentInfo != nil && parentInfo.Type() == framework.PodGroupKeyType {
+	if parentInfo != nil && parentInfo.Type() == string(fwk.PodGroupKeyType) {
 		return nil, fmt.Errorf("parent is a PodGroup, which cannot have children")
 	}
 	name := cpg.Name
@@ -975,7 +975,7 @@ func (sched *Scheduler) buildCompositePodGroupInfo(cpg *schedulingv1alpha3.Compo
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         namespace,
 			Name:              name,
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			CompositePodGroup: cpg,
 		},
 		QueueingParams: *parentInfo.QueueingParams.DeepCopy(),

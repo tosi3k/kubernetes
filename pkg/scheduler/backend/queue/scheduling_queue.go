@@ -883,14 +883,14 @@ func (p *PriorityQueue) addPodGroupMember(logger klog.Logger, pInfo *framework.Q
 		// If the last popped entity is the matching pod group, add the pod to the pending pod group pods,
 		// so it will be added to the pod group when it's requeued.
 		p.pendingPodGroupPods.add(pInfo)
-		logger.V(5).Info("Pod added to pending pod group pods, waiting for its pod group to be requeued", "podGroup", klog.KObj(rootInfoLookup), "pod", klog.KObj(pInfo))
+		logger.V(5).Info("Pod added to pending pod group pods, waiting for its pod group to be requeued", "rootType", rootInfoLookup.Type(), "root", klog.KObj(rootInfoLookup), "pod", klog.KObj(pInfo))
 	} else {
 		// Create a new group as it's the first member pod in the queue.
 		rootInfo := p.newQueuedPodGroupInfoFromRootLookup(pInfo, rootInfoLookup)
 		if added := p.moveToActiveQ(logger, rootInfo, framework.EventUnscheduledPodAdd.Label(), false); added {
 			p.activeQ.broadcast()
 		}
-		logger.V(5).Info("Pod was added to root group as the first member pod", "pod", klog.KObj(pInfo))
+		logger.V(5).Info("Pod was added to root group as the first member pod", "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "pod", klog.KObj(pInfo))
 		return
 	}
 }
@@ -925,7 +925,7 @@ func (p *PriorityQueue) addToPodGroupIfExists(logger klog.Logger, pInfo *framewo
 	if queue == activeQ || (p.isPopFromBackoffQEnabled && queue == backoffQ) {
 		p.activeQ.broadcast()
 	}
-	logger.V(5).Info("Pod added to existing pod group info", "podGroup", klog.KObj(rootInfo), "pod", klog.KObj(pInfo), "queue", queue)
+	logger.V(5).Info("Pod added to existing pod group info", "podGroupType", rootInfo.Type(), "podGroup", klog.KObj(rootInfo), "pod", klog.KObj(pInfo), "queue", queue)
 	return true
 }
 
@@ -1169,7 +1169,7 @@ func (p *PriorityQueue) AddAttemptedPodGroupIfNeeded(logger klog.Logger, pgInfo 
 	for _, pInfo := range pendingPods {
 		rootInfo.AddPod(pInfo)
 	}
-	inheritQueueingParameters(rootInfo, pgInfo)
+	rootInfo.QueueingParams = pgInfo.QueueingParams
 	pgInfo = rootInfo
 
 	hasErrorPods := false
@@ -1309,11 +1309,6 @@ func (p *PriorityQueue) Update(ctx context.Context, oldPod, newPod *v1.Pod) {
 				pInfo.PodSignature = p.signPod(ctx, newPod)
 				return
 			}
-			if pInfo := p.pendingPodGroupPods.update(newPod); pInfo != nil {
-				p.UpdateNominatedPod(logger, oldPod, pInfo.PodInfo)
-				pInfo.PodSignature = p.signPod(ctx, newPod)
-				return
-			}
 			return
 		}
 	} else {
@@ -1390,11 +1385,6 @@ func (p *PriorityQueue) Update(ctx context.Context, oldPod, newPod *v1.Pod) {
 		}
 		return
 	} else if p.isPodGroupMember(newPod) {
-		if pInfo := p.incompletePodGroupPods.update(newPod); pInfo != nil {
-			p.UpdateNominatedPod(logger, oldPod, pInfo.PodInfo)
-			pInfo.PodSignature = p.signPod(ctx, newPod)
-			return
-		}
 		if pInfo := p.pendingPodGroupPods.update(newPod); pInfo != nil {
 			p.UpdateNominatedPod(logger, oldPod, pInfo.PodInfo)
 			pInfo.PodSignature = p.signPod(ctx, newPod)
@@ -1450,7 +1440,7 @@ func (p *PriorityQueue) deletePodGroupMember(logger klog.Logger, pod *v1.Pod) {
 			return
 		}
 
-		logger.V(5).Info("Pod deleted from pending pod group info", "podGroup", klog.KObj(rootInfoLookup), "pod", klog.KObj(pInfo))
+		logger.V(5).Info("Pod deleted from pending pod group info", "rootType", rootInfoLookup.Type(), "root", klog.KObj(rootInfoLookup), "pod", klog.KObj(pInfo))
 		// Drop metric for deleted pod.
 		for plugin := range pInfo.UnschedulablePlugins.Union(pInfo.PendingPlugins) {
 			metrics.UnschedulableReason(plugin, pInfo.Pod.Spec.SchedulerName).Dec()
@@ -1465,7 +1455,7 @@ func (p *PriorityQueue) deletePodGroupMember(logger klog.Logger, pod *v1.Pod) {
 		for plugin := range pInfo.UnschedulablePlugins.Union(pInfo.PendingPlugins) {
 			metrics.UnschedulableReason(plugin, pInfo.Pod.Spec.SchedulerName).Dec()
 		}
-		logger.V(5).Info("Pod deleted from existing pod group info", "podGroup", klog.KObj(rootInfo), "pod", klog.KObj(pInfo))
+		logger.V(5).Info("Pod deleted from existing pod group info", "podGroupType", rootInfo.Type(), "podGroup", klog.KObj(rootInfo), "pod", klog.KObj(pInfo))
 	}
 	if !rootInfo.HasQueuedPodInfos() {
 		// The pod group is empty, so don't add it back to any queue.
@@ -1546,10 +1536,10 @@ func addGroup[T GenericPodGroup](p *PriorityQueue, logger klog.Logger, group T) 
 		switch g := any(group).(type) {
 		case *schedulingv1alpha3.PodGroup:
 			rootInfo.AddPodGroup(g)
-			logger.V(5).Info("PodGroup added to the existing root entity", "rootInfo", klog.KObj(rootInfo), "podGroup", klog.KObj(g))
+			logger.V(5).Info("PodGroup added to the existing root entity", "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "podGroup", klog.KObj(g))
 		case *schedulingv1alpha3.CompositePodGroup:
 			rootInfo.AddCompositePodGroup(g)
-			logger.V(5).Info("Composite Pod Group added to the existing root entity", "rootInfo", klog.KObj(rootInfo), "compositePodGroup", klog.KObj(g))
+			logger.V(5).Info("Composite Pod Group added to the existing root entity", "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "compositePodGroup", klog.KObj(g))
 		}
 	})
 
@@ -1602,10 +1592,10 @@ func updateGroup[T GenericPodGroup](p *PriorityQueue, logger klog.Logger, group 
 		switch g := any(group).(type) {
 		case *schedulingv1alpha3.PodGroup:
 			rootInfo.UpdatePodGroup(g)
-			logger.V(5).Info("Pod Group in the scheduling queue was updated", "rootInfo", klog.KObj(rootInfo), "podGroup", klog.KObj(g))
+			logger.V(5).Info("Pod Group in the scheduling queue was updated", "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "podGroup", klog.KObj(g))
 		case *schedulingv1alpha3.CompositePodGroup:
 			rootInfo.UpdateCompositePodGroup(g)
-			logger.V(5).Info("Composite Pod Group in the scheduling queue was updated", "rootInfo", klog.KObj(rootInfo), "compositePodGroup", klog.KObj(g))
+			logger.V(5).Info("Composite Pod Group in the scheduling queue was updated", "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "compositePodGroup", klog.KObj(g))
 		}
 	})
 }
@@ -1687,7 +1677,7 @@ func deleteGroup[T GenericPodGroup](p *PriorityQueue, logger klog.Logger, group 
 
 	msg := fmt.Sprintf("%s deleted, decomposed and enqueued pods to incompletePodGroupPods", entityKind)
 	if !rootInfo.HasQueuedPodInfos() {
-		logger.V(5).Info(msg, "rootInfo", klog.KObj(rootInfo), "podGroup", klog.KObj(groupObj), "pods", len(removedPods))
+		logger.V(5).Info(msg, "podGroupType", rootInfo.Type(), "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "podGroup", klog.KObj(groupObj), "pods", len(removedPods))
 		return
 	}
 
@@ -1695,7 +1685,7 @@ func deleteGroup[T GenericPodGroup](p *PriorityQueue, logger klog.Logger, group 
 	if queue == activeQ || (p.isPopFromBackoffQEnabled && queue == backoffQ) {
 		p.activeQ.broadcast()
 	}
-	logger.V(5).Info(msg, "rootInfo", klog.KObj(rootInfo), "podGroup", klog.KObj(groupObj), "pods", len(removedPods))
+	logger.V(5).Info(msg, "podGroupType", rootInfo.Type(), "rootType", rootInfo.Type(), "root", klog.KObj(rootInfo), "podGroup", klog.KObj(groupObj), "pods", len(removedPods))
 }
 
 // AddPodGroup adds a new PodGroup object to the queue,
@@ -2104,12 +2094,12 @@ func (p *PriorityQueue) newQueuedPodGroupInfo(podInfo *framework.QueuedPodInfo, 
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:       podInfo.Pod.Namespace,
 			Name:            *podInfo.Pod.Spec.SchedulingGroup.PodGroupName,
-			Type:            framework.PodGroupKeyType,
+			Type:            fwk.PodGroupKeyType,
 			UnscheduledPods: []*v1.Pod{podInfo.Pod},
 			PodGroup:        podGroup,
 		},
 		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{
-			fmt.Sprintf("%s/%s/%s", framework.PodGroupKeyType, podInfo.Pod.Namespace, *podInfo.Pod.Spec.SchedulingGroup.PodGroupName): {podInfo},
+			fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, podInfo.Pod.Namespace, *podInfo.Pod.Spec.SchedulingGroup.PodGroupName): {podInfo},
 		},
 		QueueingParams: framework.QueueingParams{
 			Timestamp:               podInfo.Timestamp,
@@ -2124,12 +2114,12 @@ func (p *PriorityQueue) newQueuedCompositePodGroupInfo(podInfo *framework.Queued
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         podInfo.Pod.Namespace,
 			Name:              compositePodGroup.Name,
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			UnscheduledPods:   []*v1.Pod{podInfo.Pod},
 			CompositePodGroup: compositePodGroup,
 		},
 		QueuedPodInfos: map[string][]*framework.QueuedPodInfo{
-			fmt.Sprintf("%s/%s/%s", framework.PodGroupKeyType, podInfo.Pod.Namespace, *podInfo.Pod.Spec.SchedulingGroup.PodGroupName): {podInfo},
+			fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, podInfo.Pod.Namespace, *podInfo.Pod.Spec.SchedulingGroup.PodGroupName): {podInfo},
 		},
 		QueueingParams: framework.QueueingParams{
 			Timestamp:               podInfo.Timestamp,
@@ -2144,11 +2134,11 @@ func queuedEntityKeyFunc(obj framework.QueuedEntityInfo) string {
 }
 
 func podGroupKeyForPod(pod *v1.Pod) string {
-	return fmt.Sprintf("%s/%s/%s", framework.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	return fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 }
 
 func podGroupKey(podGroup *schedulingv1alpha3.PodGroup) string {
-	return fmt.Sprintf("%s/%s/%s", framework.PodGroupKeyType, podGroup.Namespace, podGroup.Name)
+	return fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, podGroup.Namespace, podGroup.Name)
 }
 
 func podKey(pod *v1.Pod) string {
@@ -2156,11 +2146,11 @@ func podKey(pod *v1.Pod) string {
 }
 
 func compositePodGroupKey(cpg *schedulingv1alpha3.CompositePodGroup) string {
-	return fmt.Sprintf("%s/%s/%s", framework.CompositePodGroupKeyType, cpg.Namespace, cpg.Name)
+	return fmt.Sprintf("%s/%s/%s", fwk.CompositePodGroupKeyType, cpg.Namespace, cpg.Name)
 }
 
 func compositePodGroupKeyFromName(name, namespace string) string {
-	return fmt.Sprintf("%s/%s/%s", framework.CompositePodGroupKeyType, namespace, name)
+	return fmt.Sprintf("%s/%s/%s", fwk.CompositePodGroupKeyType, namespace, name)
 }
 
 func (p *PriorityQueue) newQueuedCompositePodGroupInfoFromAPI(cpg *schedulingv1alpha3.CompositePodGroup) *framework.QueuedPodGroupInfo {
@@ -2169,7 +2159,7 @@ func (p *PriorityQueue) newQueuedCompositePodGroupInfoFromAPI(cpg *schedulingv1a
 		PodGroupInfo: &framework.PodGroupInfo{
 			Namespace:         cpg.Namespace,
 			Name:              cpg.Name,
-			Type:              framework.CompositePodGroupKeyType,
+			Type:              fwk.CompositePodGroupKeyType,
 			UnscheduledPods:   []*v1.Pod{},
 			CompositePodGroup: cpg,
 		},

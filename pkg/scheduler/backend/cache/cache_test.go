@@ -36,6 +36,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwk "k8s.io/kube-scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -3095,8 +3096,8 @@ func TestCompositePodGroupCacheOperations_AddChildFirst_RemoveChildFirst(t *test
 	cache := newCache(ctx, time.Second, nil, true, true)
 
 	parentName := "parent-cpg"
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-cpg")
-	childKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "child-cpg")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-cpg")
+	childKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "child-cpg")
 
 	parentCPG := &schedulingv1alpha3.CompositePodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "parent-cpg", Namespace: "ns1"},
@@ -3159,8 +3160,8 @@ func TestCompositePodGroupCacheOperations_AddParentFirst_RemoveParentFirst(t *te
 	cache := newCache(ctx, time.Second, nil, true, true)
 
 	parentName := "parent-cpg"
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-cpg")
-	childKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "child-cpg")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-cpg")
+	childKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "child-cpg")
 
 	parentCPG := &schedulingv1alpha3.CompositePodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "parent-cpg", Namespace: "ns1"},
@@ -3221,8 +3222,8 @@ func TestPodGroupWithParentCPGCacheOperations_AddChildFirst_RemoveChildFirst(t *
 	cache := newCache(ctx, time.Second, nil, true, true)
 
 	parentName := "parent-cpg"
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-cpg")
-	pgKey := newPodGroupKey(framework.PodGroupKeyType, "ns1", "pg1")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-cpg")
+	pgKey := newPodGroupKey(fwk.PodGroupKeyType, "ns1", "pg1")
 
 	parentCPG := &schedulingv1alpha3.CompositePodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "parent-cpg", Namespace: "ns1"},
@@ -3282,8 +3283,8 @@ func TestPodGroupWithParentCPGCacheOperations_AddParentFirst_RemoveParentFirst(t
 	cache := newCache(ctx, time.Second, nil, true, true)
 
 	parentName := "parent-cpg"
-	parentKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "parent-cpg")
-	pgKey := newPodGroupKey(framework.PodGroupKeyType, "ns1", "pg1")
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "parent-cpg")
+	pgKey := newPodGroupKey(fwk.PodGroupKeyType, "ns1", "pg1")
 
 	parentCPG := &schedulingv1alpha3.CompositePodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "parent-cpg", Namespace: "ns1"},
@@ -3343,7 +3344,7 @@ func TestCompositePodGroupCacheOperations_Update(t *testing.T) {
 	_, ctx := ktesting.NewTestContext(t)
 	cache := newCache(ctx, time.Second, nil, true, true)
 
-	cpgKey := newPodGroupKey(framework.CompositePodGroupKeyType, "ns1", "cpg1")
+	cpgKey := newPodGroupKey(fwk.CompositePodGroupKeyType, "ns1", "cpg1")
 	cpg := &schedulingv1alpha3.CompositePodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "cpg1", Namespace: "ns1"},
 		Spec: schedulingv1alpha3.CompositePodGroupSpec{
@@ -3381,7 +3382,7 @@ func TestPodGroupCacheOperations_Update(t *testing.T) {
 	cache := newCache(ctx, time.Second, nil, true, true)
 	logger := klog.Background()
 
-	pgKey := newPodGroupKey(framework.PodGroupKeyType, "ns1", "pg1")
+	pgKey := newPodGroupKey(fwk.PodGroupKeyType, "ns1", "pg1")
 	pg := &schedulingv1alpha3.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "pg1", Namespace: "ns1"},
 		Spec: schedulingv1alpha3.PodGroupSpec{

@@ -29,6 +29,7 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -232,7 +233,7 @@ func TestGeneratePlacements(t *testing.T) {
 				Name:      tt.podGroup.Name,
 				Namespace: tt.podGroup.Namespace,
 				PodGroup:  tt.podGroup,
-				Type:      framework.PodGroupKeyType,
+				Type:      fwk.PodGroupKeyType,
 			}
 
 			result, status := pl.GeneratePlacements(tCtx, framework.NewCycleState(), podGroupInfo, placement)

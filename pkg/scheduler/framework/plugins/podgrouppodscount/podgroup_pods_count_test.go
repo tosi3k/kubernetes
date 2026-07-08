@@ -30,6 +30,7 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/features"
 	internalcache "k8s.io/kubernetes/pkg/scheduler/backend/cache"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -194,7 +195,7 @@ func TestScorePlacement(t *testing.T) {
 			pgInfo := &framework.PodGroupInfo{
 				Namespace: tt.pod.Namespace,
 				Name:      *tt.pod.Spec.SchedulingGroup.PodGroupName,
-				Type:      framework.PodGroupKeyType,
+				Type:      fwk.PodGroupKeyType,
 			}
 
 			// Run ScorePlacement
@@ -279,7 +280,7 @@ func TestNormalizePlacementScore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pl := &PodGroupPodsCount{}
-			pgInfo := &framework.PodGroupInfo{Name: "pg1", Type: framework.PodGroupKeyType}
+			pgInfo := &framework.PodGroupInfo{Name: "pg1", Type: fwk.PodGroupKeyType}
 			status := pl.NormalizePlacementScore(context.Background(), nil, pgInfo, tt.scores)
 			if tt.expectedError != "" {
 				if status.IsSuccess() {
