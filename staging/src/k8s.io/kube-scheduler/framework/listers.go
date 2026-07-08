@@ -224,16 +224,10 @@ type PodGroupState interface {
 	ScheduledPods() []*v1.Pod
 	// ScheduledPodsCount returns the number of pods for this group that are either assumed or assigned.
 	ScheduledPodsCount() int
-	// GetParent returns the parent composite pod group name, if any.
-	GetParent() (string, bool)
 }
 
 // CompositePodGroupState provides an interface to view the state of a single composite pod group.
 type CompositePodGroupState interface {
-	// GetParent returns the parent composite pod group name, if any.
-	GetParent() (string, bool)
-	// GetChildrenPGs returns the keys of child pod groups.
-	GetChildrenPGs() []string
-	// GetChildrenCPGs returns the keys of child composite pod groups.
-	GetChildrenCPGs() []string
+	// GetChildren returns the keys of child groups.
+	GetChildren() []string
 }

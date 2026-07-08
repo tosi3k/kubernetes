@@ -670,8 +670,10 @@ type PodGroupInfo interface {
 	// GetPodGroup returns the PodGroup API object or nil if the group is a composite pod group.
 	GetPodGroup() *schedulingv1alpha3.PodGroup
 	// GetCompositePodGroup returns the associated composite pod group or nil if the group is not a composite pod group.
+	// It should only be used when the CompositePodGroup feature gate is enabled.
 	GetCompositePodGroup() *schedulingv1alpha3.CompositePodGroup
 	// GetChildren returns the children of this pod group. Only composite pod groups have children.
+	// It should only be used when the CompositePodGroup feature gate is enabled.
 	GetChildren() []PodGroupInfo
 }
 

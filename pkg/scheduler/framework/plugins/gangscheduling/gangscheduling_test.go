@@ -18,7 +18,6 @@ package gangscheduling
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -380,8 +379,7 @@ type mockPodGroupState struct {
 
 func (m *mockPodGroupState) ScheduledPodsCount() int { return m.scheduledPodsCount }
 
-func (m *mockPodGroupState) GetParent() (string, bool) { return "", false }
-func (m *mockPodGroupState) GetChildren() []string     { return nil }
+func (m *mockPodGroupState) GetChildren() []string { return nil }
 
 type mockPodGroupStateLister struct {
 	state *mockPodGroupState
@@ -1071,8 +1069,6 @@ func (t *testPodGroupInfo) GetChildren() []fwk.PodGroupInfo {
 
 type testPodGroupState struct {
 	scheduledPodsCount int
-	parent             string
-	hasParent          bool
 	children           []string
 }
 
@@ -1083,26 +1079,7 @@ func (t *testPodGroupState) AssumedPods() sets.Set[types.UID]    { return nil }
 func (t *testPodGroupState) AssignedPods() sets.Set[types.UID]   { return nil }
 func (t *testPodGroupState) ScheduledPods() []*v1.Pod            { return nil }
 func (t *testPodGroupState) ScheduledPodsCount() int             { return t.scheduledPodsCount }
-func (t *testPodGroupState) GetParent() (string, bool)           { return t.parent, t.hasParent }
 func (t *testPodGroupState) GetChildren() []string               { return t.children }
-func (t *testPodGroupState) GetChildrenPGs() []string {
-	var pgs []string
-	for _, child := range t.children {
-		if strings.HasPrefix(child, "podgroup/") {
-			pgs = append(pgs, child)
-		}
-	}
-	return pgs
-}
-func (t *testPodGroupState) GetChildrenCPGs() []string {
-	var cpgs []string
-	for _, child := range t.children {
-		if strings.HasPrefix(child, "compositepodgroup/") {
-			cpgs = append(cpgs, child)
-		}
-	}
-	return cpgs
-}
 
 type mapPodGroupStateLister struct {
 	states map[string]*testPodGroupState

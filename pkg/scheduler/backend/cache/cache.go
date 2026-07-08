@@ -301,10 +301,10 @@ func (cache *cacheImpl) UpdateSnapshot(logger klog.Logger, nodeSnapshot *Snapsho
 	if cache.genericWorkloadEnabled {
 		// Take a snapshot of pod group states for this scheduling cycle.
 		cache.updatePodGroupStateSnapshot(nodeSnapshot)
-	}
-	if cache.compositePodGroupEnabled {
-		// Take a snapshot of composite pod group states for this scheduling cycle.
-		cache.updateCompositePodGroupStateSnapshot(nodeSnapshot)
+		if cache.compositePodGroupEnabled {
+			// Take a snapshot of composite pod group states for this scheduling cycle.
+			cache.updateCompositePodGroupStateSnapshot(nodeSnapshot)
+		}
 	}
 
 	return nil
@@ -896,7 +896,7 @@ func (cache *cacheImpl) RemovePodGroupMember(pod *v1.Pod) {
 // addPodGroupMember adds the pod to its pod group state, creating the group entry if it doesn't exist yet.
 // Assumes that the cache lock is already held.
 func (cache *cacheImpl) addPodGroupMember(pod *v1.Pod) {
-	key := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	podGroupState, exists := cache.podGroupStates[key]
 	if !exists {
 		podGroupState = newPodGroupState()
@@ -909,7 +909,7 @@ func (cache *cacheImpl) addPodGroupMember(pod *v1.Pod) {
 // updatePodGroupMember updates the pod entry inside its pod group state.
 // Assumes that the cache lock is already held.
 func (cache *cacheImpl) updatePodGroupMember(logger klog.Logger, oldPod, newPod *v1.Pod) {
-	key := newPodGroupKey(newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
 	podGroupState, exists := cache.podGroupStates[key]
 	if !exists {
 		// This should not happen: the pod group state should have been already created by a prior pod add action.
@@ -923,7 +923,7 @@ func (cache *cacheImpl) updatePodGroupMember(logger klog.Logger, oldPod, newPod 
 // removePodGroupMember removes the pod from its pod group state, deleting the group entry when empty.
 // Assumes that the cache lock is already held.
 func (cache *cacheImpl) removePodGroupMember(pod *v1.Pod) {
-	key := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	podGroupState, exists := cache.podGroupStates[key]
 	if !exists {
 		return
@@ -939,7 +939,7 @@ func (cache *cacheImpl) removePodGroupMember(pod *v1.Pod) {
 // assumePodGroupMember marks the pod as assumed in its pod group state.
 // Assumes that the cache lock is already held.
 func (cache *cacheImpl) assumePodGroupMember(pod *v1.Pod) {
-	key := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	podGroupState, exists := cache.podGroupStates[key]
 	if !exists {
 		podGroupState = newPodGroupState()
@@ -952,7 +952,7 @@ func (cache *cacheImpl) assumePodGroupMember(pod *v1.Pod) {
 // forgetPodGroupMember moves the pod back from assumed to unscheduled in its pod group state.
 // Assumes that the cache lock is already held.
 func (cache *cacheImpl) forgetPodGroupMember(logger klog.Logger, pod *v1.Pod) {
-	key := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	pgs, exists := cache.podGroupStates[key]
 	if !exists {
 		// This should not happen: the pod group state should have been already created by a prior pod add or assume action.
@@ -978,7 +978,7 @@ func (l *podGroupStateListerImpl) Get(namespace, podGroupName string) (fwk.PodGr
 	l.cache.mu.RLock()
 	defer l.cache.mu.RUnlock()
 
-	key := newPodGroupKey(namespace, podGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, namespace, podGroupName)
 	podGroupState, exists := l.cache.podGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("pod group state not found for pod group %s/%s", namespace, podGroupName)
@@ -1003,7 +1003,7 @@ func (l *podGroupListerImpl) Get(namespace, name string) (*schedulingv1alpha3.Po
 	l.cache.mu.RLock()
 	defer l.cache.mu.RUnlock()
 
-	key := newPodGroupKey(namespace, name)
+	key := newPodGroupKey(fwk.PodGroupKeyType, namespace, name)
 	pgs, exists := l.cache.podGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("pod group state not found for pod group %s", key)
@@ -1025,10 +1025,13 @@ type compositePodGroupStateListerImpl struct {
 }
 
 func (l *compositePodGroupStateListerImpl) Get(namespace string, podGroupName string) (fwk.CompositePodGroupState, error) {
+	if !l.cache.compositePodGroupEnabled {
+		return nil, fmt.Errorf("composite pod group feature gate is disabled")
+	}
 	l.cache.mu.RLock()
 	defer l.cache.mu.RUnlock()
 
-	key := newPodGroupKey(namespace, podGroupName)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, namespace, podGroupName)
 	cpgs, exists := l.cache.compositePodGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("composite pod group state not found for composite pod group %s", key)
@@ -1053,7 +1056,7 @@ func (l *compositePodGroupListerImpl) Get(namespace, name string) (*schedulingv1
 	l.cache.mu.RLock()
 	defer l.cache.mu.RUnlock()
 
-	key := newPodGroupKey(namespace, name)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, namespace, name)
 	cpgs, exists := l.cache.compositePodGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("composite pod group state not found for composite pod group %s", key)
@@ -1114,7 +1117,7 @@ func (cache *cacheImpl) AddPodGroup(podGroup *schedulingv1alpha3.PodGroup) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	key := newPodGroupKey(podGroup.Namespace, podGroup.Name)
+	key := newPodGroupKey(fwk.PodGroupKeyType, podGroup.Namespace, podGroup.Name)
 	pgs, exists := cache.podGroupStates[key]
 	if !exists {
 		pgs = newPodGroupState()
@@ -1126,15 +1129,14 @@ func (cache *cacheImpl) AddPodGroup(podGroup *schedulingv1alpha3.PodGroup) {
 		return
 	}
 
-	parentKey := newPodGroupKey(podGroup.Namespace, *podGroup.Spec.ParentCompositePodGroupName)
-	pgs.setParent(&parentKey)
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, podGroup.Namespace, *podGroup.Spec.ParentCompositePodGroupName)
 
 	parent, parentExists := cache.compositePodGroupStates[parentKey]
 	if !parentExists {
 		parent = newCompositePodGroupState()
 		cache.compositePodGroupStates[parentKey] = parent
 	}
-	parent.addChildPG(&key)
+	parent.addChild(&key)
 }
 
 // UpdatePodGroup updates a pod group object in the cache.
@@ -1145,7 +1147,7 @@ func (cache *cacheImpl) UpdatePodGroup(logger klog.Logger, oldPodGroup, newPodGr
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	key := newPodGroupKey(newPodGroup.Namespace, newPodGroup.Name)
+	key := newPodGroupKey(fwk.PodGroupKeyType, newPodGroup.Namespace, newPodGroup.Name)
 	pgs, exists := cache.podGroupStates[key]
 	if !exists {
 		// This should not happen: the pod group state should have been already created by a prior pod group add action.
@@ -1163,28 +1165,25 @@ func (cache *cacheImpl) RemovePodGroup(podGroup *schedulingv1alpha3.PodGroup) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	key := newPodGroupKey(podGroup.Namespace, podGroup.Name)
+	key := newPodGroupKey(fwk.PodGroupKeyType, podGroup.Namespace, podGroup.Name)
 	pgs, exists := cache.podGroupStates[key]
 	if !exists {
 		return
 	}
 
-	defer func() {
-		pgs.removePodGroup()
-		if pgs.empty() {
-			delete(cache.podGroupStates, key)
+	if cache.compositePodGroupEnabled && podGroup.Spec.ParentCompositePodGroupName != nil {
+		parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, podGroup.Namespace, *podGroup.Spec.ParentCompositePodGroupName)
+		if parent, exists := cache.compositePodGroupStates[parentKey]; exists {
+			parent.removeChild(&key)
+			if parent.empty() {
+				delete(cache.compositePodGroupStates, parentKey)
+			}
 		}
-	}()
-
-	if !cache.compositePodGroupEnabled || pgs.parent == nil {
-		return
 	}
 
-	if parent, exists := cache.compositePodGroupStates[*pgs.parent]; exists {
-		parent.removeChildPG(&key)
-		if parent.empty() {
-			delete(cache.compositePodGroupStates, *pgs.parent)
-		}
+	pgs.removePodGroup()
+	if pgs.empty() {
+		delete(cache.podGroupStates, key)
 	}
 }
 
@@ -1196,7 +1195,7 @@ func (cache *cacheImpl) AddCompositePodGroup(logger klog.Logger, cpg *scheduling
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	key := newPodGroupKey(cpg.Namespace, cpg.Name)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, cpg.Name)
 	cpgState, exists := cache.compositePodGroupStates[key]
 	if !exists {
 		cpgState = newCompositePodGroupState()
@@ -1208,15 +1207,14 @@ func (cache *cacheImpl) AddCompositePodGroup(logger klog.Logger, cpg *scheduling
 		return
 	}
 
-	parentKey := newPodGroupKey(cpg.Namespace, *cpg.Spec.ParentCompositePodGroupName)
-	cpgState.setParent(&parentKey)
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, *cpg.Spec.ParentCompositePodGroupName)
 
 	parent, parentExists := cache.compositePodGroupStates[parentKey]
 	if !parentExists {
 		parent = newCompositePodGroupState()
 		cache.compositePodGroupStates[parentKey] = parent
 	}
-	parent.addChildCPG(&key)
+	parent.addChild(&key)
 }
 
 // UpdateCompositePodGroup updates a composite pod group in the cache.
@@ -1226,7 +1224,7 @@ func (cache *cacheImpl) UpdateCompositePodGroup(logger klog.Logger, oldCPG, newC
 	}
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	key := newPodGroupKey(newCPG.Namespace, newCPG.Name)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, newCPG.Namespace, newCPG.Name)
 	pgs, exists := cache.compositePodGroupStates[key]
 	if !exists {
 		// This should not happen: the pod group state should have been already created by a prior pod group add action.
@@ -1244,19 +1242,24 @@ func (cache *cacheImpl) RemoveCompositePodGroup(cpg *schedulingv1alpha3.Composit
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	key := newPodGroupKey(cpg.Namespace, cpg.Name)
-	cpgState, exists := cache.compositePodGroupStates[key]
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, cpg.Name)
+	cpgs, exists := cache.compositePodGroupStates[key]
 	if !exists {
 		return
 	}
 	delete(cache.compositePodGroupStates, key)
 
-	if cpgState.parent != nil {
-		if parent, exists := cache.compositePodGroupStates[*cpgState.parent]; exists {
-			parent.removeChildCPG(&key)
-			if parent.empty() {
-				delete(cache.compositePodGroupStates, *cpgState.parent)
-			}
-		}
+	if cpgs.compositePodGroup == nil || cpgs.compositePodGroup.Spec.ParentCompositePodGroupName == nil {
+		return
+	}
+
+	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, *cpgs.compositePodGroup.Spec.ParentCompositePodGroupName)
+	parent, exists := cache.compositePodGroupStates[parentKey]
+	if !exists {
+		return
+	}
+	parent.removeChild(&key)
+	if parent.empty() {
+		delete(cache.compositePodGroupStates, parentKey)
 	}
 }

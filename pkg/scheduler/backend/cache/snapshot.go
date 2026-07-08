@@ -200,7 +200,7 @@ func NewSnapshot(pods []*v1.Pod, nodes []*v1.Node) *Snapshot {
 func NewTestSnapshotWithPodGroups(pods []*v1.Pod, nodes []*v1.Node, podGroups []*schedulingv1alpha3.PodGroup) *Snapshot {
 	s := NewSnapshot(pods, nodes)
 	for _, podGroup := range podGroups {
-		key := newPodGroupKey(podGroup.Namespace, podGroup.Name)
+		key := newPodGroupKey(fwk.PodGroupKeyType, podGroup.Namespace, podGroup.Name)
 		pgs, ok := s.podGroupStates[key]
 		if !ok {
 			pgs = &podGroupStateSnapshot{podGroupStateData: newPodGroupStateData()}
@@ -218,7 +218,7 @@ func createPodGroupStates(pods []*v1.Pod) map[podGroupKey]*podGroupStateSnapshot
 		if pod.Spec.SchedulingGroup == nil {
 			continue
 		}
-		key := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+		key := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 		pgs, ok := podGroupStates[key]
 		if !ok {
 			pgs = &podGroupStateSnapshot{podGroupStateData: newPodGroupStateData()}
@@ -372,7 +372,7 @@ func (l *podGroupSnapshotListerImpl) Get(namespace, name string) (*schedulingv1a
 	if !l.snapshot.genericWorkloadEnabled {
 		return nil, fmt.Errorf("generic workload feature gate is disabled")
 	}
-	key := newPodGroupKey(namespace, name)
+	key := newPodGroupKey(fwk.PodGroupKeyType, namespace, name)
 	pgs, exists := l.snapshot.podGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("pod group state not found for pod group %s", key)
@@ -404,7 +404,7 @@ func (l *compositePodGroupSnapshotListerImpl) Get(namespace string, name string)
 	if !l.snapshot.compositePodGroupEnabled {
 		return nil, fmt.Errorf("composite pod group feature gate is disabled")
 	}
-	key := newPodGroupKey(namespace, name)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, namespace, name)
 	pgs, exists := l.snapshot.compositePodGroupStates[key]
 	if !exists {
 		return nil, fmt.Errorf("composite pod group not found in snapshot", key)
@@ -424,7 +424,7 @@ type compositePodGroupStateSnapshotLister struct {
 
 // Get returns the composite pod group state from the snapshot for the given pod group.
 func (l *compositePodGroupStateSnapshotLister) Get(namespace string, name string) (fwk.CompositePodGroupState, error) {
-	key := newPodGroupKey(namespace, name)
+	key := newPodGroupKey(fwk.CompositePodGroupKeyType, namespace, name)
 	state, ok := l.compositePodGroupStates[key]
 	if !ok {
 		return nil, fmt.Errorf("composite pod group state not found for pod group %s/%s", namespace, name)
@@ -440,7 +440,7 @@ type podGroupStateSnapshotLister struct {
 
 // Get returns the pod group state from the snapshot for the given pod group.
 func (l *podGroupStateSnapshotLister) Get(namespace string, podGroupName string) (fwk.PodGroupState, error) {
-	key := newPodGroupKey(namespace, podGroupName)
+	key := newPodGroupKey(fwk.PodGroupKeyType, namespace, podGroupName)
 	state, ok := l.podGroupStates[key]
 	if !ok {
 		return nil, fmt.Errorf("pod group state not found for pod group %s/%s", namespace, podGroupName)
@@ -535,7 +535,7 @@ func (s *Snapshot) AssumePod(podInfo *framework.PodInfo) error {
 	if !s.genericWorkloadEnabled || pod.Spec.SchedulingGroup == nil {
 		return nil
 	}
-	pgKey := newPodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	pgKey := newPodGroupKey(fwk.PodGroupKeyType, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	if pgs, ok := s.podGroupStates[pgKey]; ok {
 		pgs.assumePod(pod)
 	}
@@ -600,7 +600,7 @@ func (s *Snapshot) ForgetPod(logger klog.Logger, pod *v1.Pod) error {
 	if !s.genericWorkloadEnabled || pod.Spec.SchedulingGroup == nil {
 		return nil
 	}
-	pgKey := newPodGroupKey(assumedPod.Namespace, *assumedPod.Spec.SchedulingGroup.PodGroupName)
+	pgKey := newPodGroupKey(fwk.PodGroupKeyType, assumedPod.Namespace, *assumedPod.Spec.SchedulingGroup.PodGroupName)
 	if pgs, ok := s.podGroupStates[pgKey]; ok {
 		pgs.forgetPod(assumedPod.UID)
 	}

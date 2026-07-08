@@ -36,7 +36,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwk "k8s.io/kube-scheduler/framework"
-	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -862,7 +861,7 @@ func Test_UpdatePodGroupMember(t *testing.T) {
 				t.Errorf("expected pod in AssumedPods: %v, got %v", tt.expectInAssumedPods, inAssumedPods)
 			}
 
-			podGroupKey := newPodGroupKey(newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
+			podGroupKey := newPodGroupKey(fwk.PodGroupKeyType, newPod.Namespace, *newPod.Spec.SchedulingGroup.PodGroupName)
 			gotPod := cache.podGroupStates[podGroupKey].allPods[newPod.UID]
 			if diff := cmp.Diff(tt.newPod, gotPod); diff != "" {
 				t.Errorf("stored pod does not match newPod (-want +got):\n%s", diff)
@@ -1116,7 +1115,7 @@ func Test_RemovePodGroup(t *testing.T) {
 				t.Error("Expected error getting pod group, but got none")
 			}
 
-			key := newPodGroupKey(tt.podGroup.Namespace, tt.podGroup.Name)
+			key := newPodGroupKey(fwk.PodGroupKeyType, tt.podGroup.Namespace, tt.podGroup.Name)
 			pgs, exists := cache.podGroupStates[key]
 			if tt.expectStateExists {
 				if !exists {
@@ -2644,7 +2643,7 @@ func TestSchedulerCache_UpdateSnapshot(t *testing.T) {
 			expected:              []*v1.Node{nodes[1], nodes[0], nodes[2]},
 			expectedUsedPVCCounts: map[string]int{},
 			expectedPodGroupStatesSnapshot: map[podGroupKey]*podGroupStateSnapshot{
-				newPodGroupKey("test-ns", "pg-0"): {
+				newPodGroupKey(fwk.PodGroupKeyType, "test-ns", "pg-0"): {
 					podGroupStateData: podGroupStateData{
 						allPods:         map[types.UID]*v1.Pod{"puid-podgroup-0": podsWithPodGroupName[0]},
 						assignedPods:    sets.New[types.UID]("puid-podgroup-0"),
@@ -2652,7 +2651,7 @@ func TestSchedulerCache_UpdateSnapshot(t *testing.T) {
 						assumedPods:     make(map[types.UID]*v1.Pod),
 					},
 				},
-				newPodGroupKey("test-ns", "pg-2"): {
+				newPodGroupKey(fwk.PodGroupKeyType, "test-ns", "pg-2"): {
 					podGroupStateData: podGroupStateData{
 						allPods:         map[types.UID]*v1.Pod{"puid-podgroup-2": podsWithPodGroupName[2]},
 						assignedPods:    sets.New[types.UID]("puid-podgroup-2"),
@@ -3115,23 +3114,20 @@ func TestCompositePodGroupCacheOperations_AddChildFirst_RemoveChildFirst(t *test
 
 	// 1. Add child first
 	cache.AddCompositePodGroup(logger, childCPG)
-	childState, ok := cache.podGroupStates[childKey]
+	childState, ok := cache.compositePodGroupStates[childKey]
 	if !ok || childState == nil {
 		t.Fatalf("Expected child state to exist")
-	}
-	if childState.parent == nil || *childState.parent != parentKey {
-		t.Errorf("Expected child state parent to point to parentKey")
 	}
 	if childState.compositePodGroup != childCPG {
 		t.Errorf("Expected child state composite pod group to be the same as the one added")
 	}
-	if _, ok := cache.podGroupStates[parentKey]; ok {
+	if _, ok := cache.compositePodGroupStates[parentKey]; !ok {
 		t.Fatalf("Parent state should not exist in cache yet")
 	}
 
 	// 2. Add parent second
 	cache.AddCompositePodGroup(logger, parentCPG)
-	parentState, ok := cache.podGroupStates[parentKey]
+	parentState, ok := cache.compositePodGroupStates[parentKey]
 	if !ok || parentState == nil {
 		t.Fatalf("Expected parent state to exist")
 	}
@@ -3141,7 +3137,7 @@ func TestCompositePodGroupCacheOperations_AddChildFirst_RemoveChildFirst(t *test
 
 	// 3. Remove child first
 	cache.RemoveCompositePodGroup(childCPG)
-	if _, ok := cache.podGroupStates[childKey]; ok {
+	if _, ok := cache.compositePodGroupStates[childKey]; ok {
 		t.Errorf("Expected child-cpg state to be removed")
 	}
 	if parentState.children.Has(childKey) {
@@ -3150,7 +3146,7 @@ func TestCompositePodGroupCacheOperations_AddChildFirst_RemoveChildFirst(t *test
 
 	// 4. Remove parent second
 	cache.RemoveCompositePodGroup(parentCPG)
-	if _, ok := cache.podGroupStates[parentKey]; ok {
+	if _, ok := cache.compositePodGroupStates[parentKey]; ok {
 		t.Errorf("Expected parent-cpg state to be removed")
 	}
 }
@@ -3179,7 +3175,7 @@ func TestCompositePodGroupCacheOperations_AddParentFirst_RemoveParentFirst(t *te
 
 	// 1. Add parent first
 	cache.AddCompositePodGroup(logger, parentCPG)
-	parentState, ok := cache.podGroupStates[parentKey]
+	parentState, ok := cache.compositePodGroupStates[parentKey]
 	if !ok || parentState == nil {
 		t.Fatalf("Expected parent state to exist")
 	}
@@ -3189,12 +3185,9 @@ func TestCompositePodGroupCacheOperations_AddParentFirst_RemoveParentFirst(t *te
 
 	// 2. Add child second
 	cache.AddCompositePodGroup(logger, childCPG)
-	childState, ok := cache.podGroupStates[childKey]
+	childState, ok := cache.compositePodGroupStates[childKey]
 	if !ok || childState == nil {
 		t.Fatalf("Expected child state to exist")
-	}
-	if childState.parent == nil || *childState.parent != parentKey {
-		t.Errorf("Expected child state parent to point to parentKey")
 	}
 	if !parentState.children.Has(childKey) {
 		t.Errorf("Expected parent state to have child key in children set")
@@ -3202,18 +3195,22 @@ func TestCompositePodGroupCacheOperations_AddParentFirst_RemoveParentFirst(t *te
 
 	// 3. Remove parent first
 	cache.RemoveCompositePodGroup(parentCPG)
-	if _, ok := cache.podGroupStates[parentKey]; ok {
-		t.Errorf("Expected parent-cpg state to be removed")
+	parentState, ok = cache.compositePodGroupStates[parentKey]
+	if !ok || parentState == nil {
+		t.Fatalf("Expected parent state to not be removed")
 	}
-	// The child should be unlinked from the parent (since parent is gone)
-	if childState.parent != nil {
-		t.Errorf("Expected child parent link to be unlinked (nil), got %v", childState.parent)
+	if !parentState.children.Has(childKey) {
+		t.Errorf("Expected child reference to be present in parent's children set")
 	}
 
 	// 4. Remove child second
 	cache.RemoveCompositePodGroup(childCPG)
-	if _, ok := cache.podGroupStates[childKey]; ok {
+	if _, ok := cache.compositePodGroupStates[childKey]; ok {
 		t.Errorf("Expected child-cpg state to be removed")
+	}
+	parentState, ok = cache.compositePodGroupStates[parentKey]
+	if ok || parentState != nil {
+		t.Errorf("Expected parent state to be removed")
 	}
 }
 
@@ -3245,16 +3242,13 @@ func TestPodGroupWithParentCPGCacheOperations_AddChildFirst_RemoveChildFirst(t *
 	if !ok || pgState == nil {
 		t.Fatalf("Expected pg state to exist")
 	}
-	if pgState.parent == nil || *pgState.parent != parentKey {
-		t.Errorf("Expected pg state parent to point to parentKey")
-	}
-	if _, ok := cache.podGroupStates[parentKey]; ok {
+	if _, ok := cache.compositePodGroupStates[parentKey]; ok {
 		t.Fatalf("Parent state should not exist in cache yet")
 	}
 
 	// 2. Add parent second
 	cache.AddCompositePodGroup(logger, parentCPG)
-	parentState, ok := cache.podGroupStates[parentKey]
+	parentState, ok := cache.compositePodGroupStates[parentKey]
 	if !ok || parentState == nil {
 		t.Fatalf("Expected parent state to exist")
 	}
@@ -3273,7 +3267,7 @@ func TestPodGroupWithParentCPGCacheOperations_AddChildFirst_RemoveChildFirst(t *
 
 	// 4. Remove parent second
 	cache.RemoveCompositePodGroup(parentCPG)
-	if _, ok := cache.podGroupStates[parentKey]; ok {
+	if _, ok := cache.compositePodGroupStates[parentKey]; ok {
 		t.Errorf("Expected parent-cpg state to be removed")
 	}
 }
@@ -3302,7 +3296,7 @@ func TestPodGroupWithParentCPGCacheOperations_AddParentFirst_RemoveParentFirst(t
 
 	// 1. Add parent first
 	cache.AddCompositePodGroup(logger, parentCPG)
-	parentState, ok := cache.podGroupStates[parentKey]
+	parentState, ok := cache.compositePodGroupStates[parentKey]
 	if !ok || parentState == nil {
 		t.Fatalf("Expected parent state to exist")
 	}
@@ -3316,9 +3310,6 @@ func TestPodGroupWithParentCPGCacheOperations_AddParentFirst_RemoveParentFirst(t
 	if !ok || pgState == nil {
 		t.Fatalf("Expected pg state to exist")
 	}
-	if pgState.parent == nil || *pgState.parent != parentKey {
-		t.Errorf("Expected pg state parent to point to parentKey")
-	}
 	if !parentState.children.Has(pgKey) {
 		t.Errorf("Expected parent state to have pg key in children set")
 	}
@@ -3329,9 +3320,6 @@ func TestPodGroupWithParentCPGCacheOperations_AddParentFirst_RemoveParentFirst(t
 		t.Errorf("Expected parent-cpg state to be removed")
 	}
 	// The child should be unlinked from the parent (since parent is gone)
-	if pgState.parent != nil {
-		t.Errorf("Expected pg parent link to be unlinked (nil), got %v", pgState.parent)
-	}
 
 	// 4. Remove child second
 	cache.RemovePodGroup(pg)
@@ -3356,7 +3344,7 @@ func TestCompositePodGroupCacheOperations_Update(t *testing.T) {
 	logger := klog.Background()
 
 	cache.AddCompositePodGroup(logger, cpg)
-	cpgState, ok := cache.podGroupStates[cpgKey]
+	cpgState, ok := cache.compositePodGroupStates[cpgKey]
 	if !ok || cpgState == nil {
 		t.Fatalf("Expected cpg1 state to exist")
 	}
@@ -3367,7 +3355,7 @@ func TestCompositePodGroupCacheOperations_Update(t *testing.T) {
 	updatedCPG.Spec.SchedulingPolicy.Gang.MinGroupCount = 3
 	cache.UpdateCompositePodGroup(logger, cpg, updatedCPG)
 
-	updatedCPGState, ok := cache.podGroupStates[cpgKey]
+	updatedCPGState, ok := cache.compositePodGroupStates[cpgKey]
 	if !ok || updatedCPGState.compositePodGroup.Spec.SchedulingPolicy.Gang.MinGroupCount != 3 {
 		t.Errorf("Expected cached CPG MinGroupCount to be updated to 3")
 	}

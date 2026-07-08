@@ -413,16 +413,16 @@ func (pl *GangScheduling) isCPGTreeReady(namespace, cpgName string) bool {
 	}
 
 	successfulChildren := 0
-	for _, childCPGKey := range cpgState.GetChildrenCPGs() {
-		_, childName := unpackChildKey(childCPGKey)
-		if pl.isCPGTreeReady(namespace, childName) {
-			successfulChildren++
-		}
-	}
-	for _, childPGKey := range cpgState.GetChildrenPGs() {
-		_, childName := unpackChildKey(childPGKey)
-		if pl.isPGReadyForPreEnqueue(namespace, childName) {
-			successfulChildren++
+	for _, childKey := range cpgState.GetChildren() {
+		childType, _, childName := unpackChildKey(childKey)
+		if childType == fwk.CompositePodGroupKeyType {
+			if pl.isCPGTreeReady(namespace, childName) {
+				successfulChildren++
+			}
+		} else {
+			if pl.isPGReadyForPreEnqueue(namespace, childName) {
+				successfulChildren++
+			}
 		}
 	}
 
@@ -572,18 +572,8 @@ func (pl *GangScheduling) placementFeasible(ctx context.Context, placementCycleS
 	}
 
 	scheduled := 0
-	for _, childKey := range cpgState.GetChildrenCPGs() {
-		key := fmt.Sprintf("%s/%s", fwk.CompositePodGroupKeyType, childKey)
-		status, exists := statuses.Status[key]
-		// If the child is not in the status map, it means its PodGroup was already scheduled.
-		// This can happen if we partially schedule a CPG and then some more pods arrive.
-		if !exists || status.IsSuccess() {
-			scheduled++
-		}
-	}
-	for _, childKey := range cpgState.GetChildrenPGs() {
-		key := fmt.Sprintf("%s/%s", fwk.PodGroupKeyType, childKey)
-		status, exists := statuses.Status[key]
+	for _, childKey := range cpgState.GetChildren() {
+		status, exists := statuses.Status[childKey]
 		// If the child is not in the status map, it means its PodGroup was already scheduled.
 		// This can happen if we partially schedule a CPG and then some more pods arrive.
 		if !exists || status.IsSuccess() {
@@ -649,7 +639,7 @@ func (pl *GangScheduling) placementFeasibleForPodGroup(ctx context.Context, plac
 	return nil
 }
 
-func unpackChildKey(childKey string) (string, string) {
+func unpackChildKey(childKey string) (fwk.GroupKeyType, string, string) {
 	parts := strings.Split(childKey, "/")
-	return parts[0], parts[1]
+	return fwk.GroupKeyType(parts[0]), parts[1], parts[2]
 }

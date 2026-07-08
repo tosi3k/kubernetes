@@ -137,10 +137,6 @@ func (c *podGroupStateContract) ScheduledPods() []*v1.Pod {
 	return nil
 }
 
-func (c *podGroupStateContract) GetParent() (string, bool) {
-	return "", false
-}
-
 func (c *podGroupStateContract) GetChildren() []string {
 	return nil
 }
@@ -159,15 +155,7 @@ func (c *compositePodGroupStateListerContract) Get(_ string, _ string) (fwk.Comp
 
 type compositePodGroupStateContract struct{}
 
-func (c *compositePodGroupStateContract) GetParent() (string, bool) {
-	return "", false
-}
-
-func (c *compositePodGroupStateContract) GetChildrenPGs() []string {
-	return nil
-}
-
-func (c *compositePodGroupStateContract) GetChildrenCPGs() []string {
+func (c *compositePodGroupStateContract) GetChildren() []string {
 	return nil
 }
 
