@@ -17,9 +17,13 @@ limitations under the License.
 package queue
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -32,9 +36,10 @@ import (
 type workloadForest struct {
 	podGroups          map[string]*schedulingv1alpha3.PodGroup
 	compositePodGroups map[string]*schedulingv1alpha3.CompositePodGroup
-	// children is a map of parent CompositePodGroup keys to the set of keys representing their direct children.
-	// It may have entries for non-existent parent keys to improve performance by
-	// avoiding iteration over all PodGroups and CompositePodGroups when adding a parent CompositePodGroup.
+	// children maps a parent CompositePodGroup key to its direct children keys (PodGroups or CompositePodGroups).
+	// As an invariant of this structure, a child-to-parent relationship is populated here regardless of whether
+	// the parent object has been explicitly observed yet. This prevents the need to iterate over all existing
+	// groups to retroactively link children when a parent is finally added.
 	children                   map[string]sets.Set[string]
 	isCompositePodGroupEnabled bool
 }
@@ -53,11 +58,11 @@ func (wf *workloadForest) addPodGroup(podGroup *schedulingv1alpha3.PodGroup) {
 	pgKey := podGroupKey(podGroup)
 	wf.podGroups[pgKey] = podGroup
 
-	if !wf.hasPodGroupParent(podGroup) {
+	if !wf.podGroupHasParent(podGroup) {
 		return
 	}
 
-	parentKey := compositePodGroupKeyFromName(*podGroup.Spec.ParentCompositePodGroupName, podGroup.Namespace)
+	parentKey := framework.CompositePodGroupKey(podGroup.Namespace, *podGroup.Spec.ParentCompositePodGroupName)
 	_, exists := wf.children[parentKey]
 	if !exists {
 		wf.children[parentKey] = sets.New[string]()
@@ -75,11 +80,11 @@ func (wf *workloadForest) deletePodGroup(podGroup *schedulingv1alpha3.PodGroup) 
 	pgKey := podGroupKey(podGroup)
 	delete(wf.podGroups, pgKey)
 
-	if !wf.hasPodGroupParent(podGroup) {
+	if !wf.podGroupHasParent(podGroup) {
 		return
 	}
 
-	parentKey := compositePodGroupKeyFromName(*podGroup.Spec.ParentCompositePodGroupName, podGroup.Namespace)
+	parentKey := framework.CompositePodGroupKey(podGroup.Namespace, *podGroup.Spec.ParentCompositePodGroupName)
 	parentChildren, exists := wf.children[parentKey]
 	if !exists {
 		return
@@ -92,10 +97,6 @@ func (wf *workloadForest) deletePodGroup(podGroup *schedulingv1alpha3.PodGroup) 
 
 // addCompositePodGroup adds a CompositePodGroup to the forest.
 func (wf *workloadForest) addCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) {
-	if !wf.isCompositePodGroupEnabled {
-		return
-	}
-
 	cpgKey := compositePodGroupKey(cpg)
 	wf.compositePodGroups[cpgKey] = cpg
 
@@ -103,7 +104,7 @@ func (wf *workloadForest) addCompositePodGroup(cpg *schedulingv1alpha3.Composite
 		return
 	}
 
-	parentKey := compositePodGroupKeyFromName(*cpg.Spec.ParentCompositePodGroupName, cpg.Namespace)
+	parentKey := framework.CompositePodGroupKey(cpg.Namespace, *cpg.Spec.ParentCompositePodGroupName)
 	_, exists := wf.children[parentKey]
 	if !exists {
 		wf.children[parentKey] = sets.New[string]()
@@ -113,18 +114,11 @@ func (wf *workloadForest) addCompositePodGroup(cpg *schedulingv1alpha3.Composite
 
 // updateCompositePodGroup updates a CompositePodGroup in the forest.
 func (wf *workloadForest) updateCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) {
-	if !wf.isCompositePodGroupEnabled {
-		return
-	}
 	wf.compositePodGroups[compositePodGroupKey(cpg)] = cpg
 }
 
 // deleteCompositePodGroup removes a CompositePodGroup from the forest.
 func (wf *workloadForest) deleteCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) {
-	if !wf.isCompositePodGroupEnabled {
-		return
-	}
-
 	cpgKey := compositePodGroupKey(cpg)
 	delete(wf.compositePodGroups, cpgKey)
 
@@ -132,7 +126,7 @@ func (wf *workloadForest) deleteCompositePodGroup(cpg *schedulingv1alpha3.Compos
 		return
 	}
 
-	parentKey := compositePodGroupKeyFromName(*cpg.Spec.ParentCompositePodGroupName, cpg.Namespace)
+	parentKey := framework.CompositePodGroupKey(cpg.Namespace, *cpg.Spec.ParentCompositePodGroupName)
 	parentChildren, exists := wf.children[parentKey]
 	if !exists {
 		return
@@ -160,7 +154,7 @@ func (wf *workloadForest) getRootLookupInfoForPodGroup(podGroup *schedulingv1alp
 		return nil, false
 	}
 
-	if !wf.hasPodGroupParent(podGroup) {
+	if !wf.podGroupHasParent(podGroup) {
 		return &framework.QueuedPodGroupInfo{
 			PodGroupInfo: &framework.PodGroupInfo{
 				Namespace: podGroup.Namespace,
@@ -182,8 +176,10 @@ func (wf *workloadForest) getRootLookupInfoForParentCPG(parentName, namespace st
 	currParentName := parentName
 	visited := sets.New[string]()
 	for {
-		cpgKey := compositePodGroupKeyFromName(currParentName, namespace)
+		cpgKey := framework.CompositePodGroupKey(namespace, currParentName)
 		if visited.Has(cpgKey) {
+			// TODO(jdzikowski): propagate logger to the getPod method in the scheduling queue.
+			utilruntime.HandleError(fmt.Errorf("cycle detected in composite pod group hierarchy: %s/%s", parentName, namespace))
 			return nil, false
 		}
 		visited.Insert(cpgKey)
@@ -207,11 +203,11 @@ func (wf *workloadForest) getRootLookupInfoForParentCPG(parentName, namespace st
 }
 
 // getLeafPodGroups returns all PodGroups that are leaf nodes in the subtree rooted at the given CompositePodGroup.
-func (wf *workloadForest) getLeafPodGroups(rootLookupInfo *framework.QueuedPodGroupInfo) []*schedulingv1alpha3.PodGroup {
+func (wf *workloadForest) getLeafPodGroups(logger klog.Logger, rootLookupInfo *framework.QueuedPodGroupInfo) []*schedulingv1alpha3.PodGroup {
 	var pgs []*schedulingv1alpha3.PodGroup
 	var key string
 	if rootLookupInfo.GetType() == fwk.PodGroupKeyType {
-		key = podGroupKeyFromName(rootLookupInfo.GetName(), rootLookupInfo.GetNamespace())
+		key = framework.PodGroupKey(rootLookupInfo.GetNamespace(), rootLookupInfo.GetName())
 		pg, exists := wf.podGroups[key]
 		if !exists {
 			return pgs
@@ -220,7 +216,7 @@ func (wf *workloadForest) getLeafPodGroups(rootLookupInfo *framework.QueuedPodGr
 		return pgs
 	}
 
-	key = compositePodGroupKeyFromName(rootLookupInfo.GetName(), rootLookupInfo.GetNamespace())
+	key = framework.CompositePodGroupKey(rootLookupInfo.GetNamespace(), rootLookupInfo.GetName())
 	queue := []string{key}
 	visited := sets.New[string]()
 
@@ -229,7 +225,7 @@ func (wf *workloadForest) getLeafPodGroups(rootLookupInfo *framework.QueuedPodGr
 		queue = queue[1:]
 
 		if visited.Has(currKey) {
-			// Cycle detected, something is wrong.
+			utilruntime.HandleErrorWithLogger(logger, nil, "cycle detected in composite pod group hierarchy", "cpg-name", rootLookupInfo.GetName(), "namespace", rootLookupInfo.GetNamespace())
 			return pgs
 		}
 		visited.Insert(currKey)
@@ -264,72 +260,69 @@ func (wf *workloadForest) getCompositePodGroup(cpgLookup *schedulingv1alpha3.Com
 	return podGroup, ok
 }
 
-func (wf *workloadForest) buildPodGroupInfo(root any, visited sets.Set[string]) *framework.PodGroupInfo {
-	switch r := root.(type) {
-	case *schedulingv1alpha3.PodGroup:
-		key := podGroupKey(r)
-		if visited.Has(key) {
-			return nil
-		}
-		visited.Insert(key)
-
-		return &framework.PodGroupInfo{
-			Namespace: r.Namespace,
-			Name:      r.Name,
-			Type:      fwk.PodGroupKeyType,
-			PodGroup:  r,
-			Children:  make([]*framework.PodGroupInfo, 0),
-		}
-	case *schedulingv1alpha3.CompositePodGroup:
-		key := compositePodGroupKey(r)
-		if visited.Has(key) {
-			return nil
-		}
-		visited.Insert(key)
-
-		pgi := &framework.PodGroupInfo{
-			Namespace:         r.Namespace,
-			Name:              r.Name,
-			Type:              fwk.CompositePodGroupKeyType,
-			CompositePodGroup: r,
-			Children:          make([]*framework.PodGroupInfo, 0),
-		}
-
-		childrenSet, ok := wf.children[key]
-		if !ok {
-			return pgi
-		}
-		for childKey := range childrenSet {
-			if childPG, ok := wf.podGroups[childKey]; ok {
-				if childInfo := wf.buildPodGroupInfo(childPG, visited); childInfo != nil {
-					pgi.Children = append(pgi.Children, childInfo)
-				}
-			}
-			if childCPG, ok := wf.compositePodGroups[childKey]; ok {
-				if childInfo := wf.buildPodGroupInfo(childCPG, visited); childInfo != nil {
-					pgi.Children = append(pgi.Children, childInfo)
-				}
-			}
-		}
-		return pgi
-	default:
+func (wf *workloadForest) buildPodGroupInfoForPG(logger klog.Logger, pg *schedulingv1alpha3.PodGroup, visited sets.Set[string]) *framework.PodGroupInfo {
+	key := podGroupKey(pg)
+	if visited.Has(key) {
+		utilruntime.HandleErrorWithLogger(logger, nil, "cycle detected in composite pod group hierarchy", "pg-name", pg.Name, "namespace", pg.Namespace)
 		return nil
+	}
+	visited.Insert(key)
+
+	return &framework.PodGroupInfo{
+		Namespace: pg.Namespace,
+		Name:      pg.Name,
+		Type:      fwk.PodGroupKeyType,
+		PodGroup:  pg,
+		Children:  make([]*framework.PodGroupInfo, 0),
 	}
 }
 
-func (wf *workloadForest) buildQueuedPodGroupInfo(rootLookup *framework.QueuedPodGroupInfo) *framework.QueuedPodGroupInfo {
-	var root any
-	switch rootLookup.GetType() {
-	case fwk.PodGroupKeyType:
-		root = wf.podGroups[podGroupKeyFromName(rootLookup.GetName(), rootLookup.GetNamespace())]
-	case fwk.CompositePodGroupKeyType:
-		root = wf.compositePodGroups[compositePodGroupKeyFromName(rootLookup.GetName(), rootLookup.GetNamespace())]
-	}
-	if root == nil {
+func (wf *workloadForest) buildPodGroupInfoForCPG(logger klog.Logger, cpg *schedulingv1alpha3.CompositePodGroup, visited sets.Set[string]) *framework.PodGroupInfo {
+	key := compositePodGroupKey(cpg)
+	if visited.Has(key) {
+		utilruntime.HandleErrorWithLogger(logger, nil, "cycle detected in composite pod group hierarchy", "cpg-name", cpg.Name, "namespace", cpg.Namespace)
 		return nil
 	}
+	visited.Insert(key)
 
-	pgi := wf.buildPodGroupInfo(root, sets.New[string]())
+	pgi := &framework.PodGroupInfo{
+		Namespace:         cpg.Namespace,
+		Name:              cpg.Name,
+		Type:              fwk.CompositePodGroupKeyType,
+		CompositePodGroup: cpg,
+		Children:          make([]*framework.PodGroupInfo, 0),
+	}
+
+	childrenSet, ok := wf.children[key]
+	if !ok {
+		return pgi
+	}
+	for childKey := range childrenSet {
+		if childPG, ok := wf.podGroups[childKey]; ok {
+			if childInfo := wf.buildPodGroupInfoForPG(logger, childPG, visited); childInfo != nil {
+				pgi.Children = append(pgi.Children, childInfo)
+			}
+		}
+		if childCPG, ok := wf.compositePodGroups[childKey]; ok {
+			if childInfo := wf.buildPodGroupInfoForCPG(logger, childCPG, visited); childInfo != nil {
+				pgi.Children = append(pgi.Children, childInfo)
+			}
+		}
+	}
+	return pgi
+}
+
+func (wf *workloadForest) buildQueuedPodGroupInfo(logger klog.Logger, rootLookup *framework.QueuedPodGroupInfo) *framework.QueuedPodGroupInfo {
+	var pgi *framework.PodGroupInfo
+	switch rootLookup.GetType() {
+	case fwk.PodGroupKeyType:
+		pg := wf.podGroups[framework.PodGroupKey(rootLookup.GetNamespace(), rootLookup.GetName())]
+		pgi = wf.buildPodGroupInfoForPG(logger, pg, sets.New[string]())
+	case fwk.CompositePodGroupKeyType:
+		cpg := wf.compositePodGroups[framework.CompositePodGroupKey(rootLookup.GetNamespace(), rootLookup.GetName())]
+		pgi = wf.buildPodGroupInfoForCPG(logger, cpg, sets.New[string]())
+	}
+
 	if pgi == nil {
 		return nil
 	}
@@ -339,6 +332,6 @@ func (wf *workloadForest) buildQueuedPodGroupInfo(rootLookup *framework.QueuedPo
 	}
 }
 
-func (wf *workloadForest) hasPodGroupParent(pg *schedulingv1alpha3.PodGroup) bool {
+func (wf *workloadForest) podGroupHasParent(pg *schedulingv1alpha3.PodGroup) bool {
 	return wf.isCompositePodGroupEnabled && pg.Spec.ParentCompositePodGroupName != nil
 }

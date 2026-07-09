@@ -797,43 +797,30 @@ func (pqi *QueuedPodInfo) SetFlushTimestamp(t time.Time) {
 	pqi.FlushTimestamp = t
 }
 
+// PodGroupKey returns the key for a pod group.
+func PodGroupKey(namespace, name string) string {
+	return fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, namespace, name)
+}
+
+// CompositePodGroupKey returns the key for a composite pod group.
+func CompositePodGroupKey(namespace, name string) string {
+	return fmt.Sprintf("%s/%s/%s", fwk.CompositePodGroupKeyType, namespace, name)
+}
+
 // QueuedPodGroupInfo is a PodGroupInfo wrapper with additional information related to
 // the pod group's status in the scheduling queue and stores all queued pods from that pod group.
 type QueuedPodGroupInfo struct {
 	*PodGroupInfo
 	QueueingParams
-	// QueuedPodInfos are the pod group's pods that are currently queued.
-	// The order of the pods is deterministic and based on the priority and timestamp.
+	// QueuedPodInfos are the pod group pods that are currently queued.
+	// This map is keyed by pod group keys in the same format as framework.PodGroupKey function.
+	// Its values are slices of corresponding leaf pod group's queued pods.
+	// The order of the pods in the slice is deterministic and based on the priority and timestamp.
 	QueuedPodInfos map[string][]*QueuedPodInfo
 }
 
 func (pgqi *QueuedPodGroupInfo) Type() string {
 	return string(pgqi.GetType())
-}
-
-func pgKey(namespace, name string) string {
-	return fmt.Sprintf("%s/%s/%s", fwk.PodGroupKeyType, namespace, name)
-}
-
-// findLeafPodGroup uses DFS-like algorithm to find the PodGroup the pod belongs to.
-func findLeafPodGroup(curr *PodGroupInfo, namespace, name string) *PodGroupInfo {
-	if curr.GetPodGroup() != nil {
-		if curr.GetName() == name && curr.GetNamespace() == namespace {
-			return curr
-		}
-		return nil
-	}
-	if curr.GetCompositePodGroup() != nil {
-		if curr.GetName() == name && curr.GetNamespace() == namespace {
-			return curr
-		}
-		for _, child := range curr.Children {
-			if leaf := findLeafPodGroup(child, namespace, name); leaf != nil {
-				return leaf
-			}
-		}
-	}
-	return nil
 }
 
 // AddPod adds a pod to the queued pod group info, if the pod belongs to the pod group.
@@ -851,7 +838,7 @@ func (pgqi *QueuedPodGroupInfo) AddPod(pInfo *QueuedPodInfo) {
 		return
 	}
 
-	leafPG := findLeafPodGroup(pgqi.PodGroupInfo, pInfo.Pod.Namespace, *pInfo.Pod.Spec.SchedulingGroup.PodGroupName)
+	leafPG, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, *pInfo.Pod.Spec.SchedulingGroup.PodGroupName)
 	if leafPG == nil {
 		return
 	}
@@ -860,7 +847,7 @@ func (pgqi *QueuedPodGroupInfo) AddPod(pInfo *QueuedPodInfo) {
 		pgqi.QueuedPodInfos = make(map[string][]*QueuedPodInfo)
 	}
 
-	key := pgKey(leafPG.Namespace, leafPG.Name)
+	key := PodGroupKey(leafPG.Namespace, leafPG.Name)
 	index, _ := slices.BinarySearchFunc(pgqi.QueuedPodInfos[key], pInfo, PodGroupMemberPodsOrderingFunc)
 
 	pgqi.QueuedPodInfos[key] = slices.Insert(pgqi.QueuedPodInfos[key], index, pInfo)
@@ -882,7 +869,7 @@ func (pgqi *QueuedPodGroupInfo) RemovePod(pod *v1.Pod) *QueuedPodInfo {
 		return nil
 	}
 
-	key := pgKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := PodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	list, exists := pgqi.QueuedPodInfos[key]
 	if !exists {
 		return nil
@@ -901,7 +888,7 @@ func (pgqi *QueuedPodGroupInfo) RemovePod(pod *v1.Pod) *QueuedPodInfo {
 	}
 
 	// Remove from leaf UnscheduledPods
-	leafPG := findLeafPodGroup(pgqi.PodGroupInfo, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	leafPG, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, *pod.Spec.SchedulingGroup.PodGroupName)
 	if leafPG == nil {
 		return removed
 	}
@@ -975,7 +962,7 @@ func (pgqi *QueuedPodGroupInfo) Update(pod *v1.Pod) (*QueuedPodInfo, error) {
 		return nil, fmt.Errorf("pod %s/%s to update not found in the queued group info", pod.Namespace, pod.Name)
 	}
 
-	key := pgKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+	key := PodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	list, exists := pgqi.QueuedPodInfos[key]
 	if !exists {
 		return nil, fmt.Errorf("pod %s/%s to update not found in the queued group info", pod.Namespace, pod.Name)
@@ -987,7 +974,7 @@ func (pgqi *QueuedPodGroupInfo) Update(pod *v1.Pod) (*QueuedPodInfo, error) {
 		}
 		err := pInfo.PodInfo.Update(pod)
 
-		leafPG := findLeafPodGroup(pgqi.PodGroupInfo, pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
+		leafPG, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, *pod.Spec.SchedulingGroup.PodGroupName)
 		if leafPG != nil {
 			for i, p := range leafPG.UnscheduledPods {
 				if p.Name == pod.Name && p.Namespace == pod.Namespace {
@@ -1009,9 +996,6 @@ func (pgqi *QueuedPodGroupInfo) Gated() bool {
 
 // GetPriority returns the pod group's priority.
 func (pgqi *QueuedPodGroupInfo) GetPriority() int32 {
-	if pgqi.PodGroupInfo == nil {
-		return 0
-	}
 	if pgqi.PodGroup != nil {
 		return schedutil.PodGroupPriority(pgqi.PodGroup)
 	}
@@ -1023,16 +1007,16 @@ func (pgqi *QueuedPodGroupInfo) GetPriority() int32 {
 
 func (pgqi *QueuedPodGroupInfo) Size() int {
 	size := 0
-	for _, list := range pgqi.QueuedPodInfos {
-		size += len(list)
+	for _, pInfos := range pgqi.QueuedPodInfos {
+		size += len(pInfos)
 	}
 	return size
 }
 
 func (pgqi *QueuedPodGroupInfo) IncAttempts() {
 	pgqi.Attempts++
-	for _, list := range pgqi.QueuedPodInfos {
-		for _, pInfo := range list {
+	for _, pInfos := range pgqi.QueuedPodInfos {
+		for _, pInfo := range pInfos {
 			pInfo.IncAttempts()
 		}
 	}
@@ -1042,8 +1026,11 @@ func (pgqi *QueuedPodGroupInfo) SetInitialAttemptTimestamp(t time.Time) {
 	if pgqi.InitialAttemptTimestamp == nil {
 		pgqi.InitialAttemptTimestamp = &t
 	}
-	for _, list := range pgqi.QueuedPodInfos {
-		for _, pInfo := range list {
+	// A new pod might get added to the pod group, even after the initial
+	// attempt timestamp has been set. We need to always try to set the initial
+	// attempt timestamp for all member pods.
+	for _, pInfos := range pgqi.QueuedPodInfos {
+		for _, pInfo := range pInfos {
 			pInfo.SetInitialAttemptTimestamp(t)
 		}
 	}
@@ -1051,232 +1038,161 @@ func (pgqi *QueuedPodGroupInfo) SetInitialAttemptTimestamp(t time.Time) {
 
 func (pgqi *QueuedPodGroupInfo) SetWasFlushedFromUnschedulable(flushed bool) {
 	pgqi.WasFlushedFromUnschedulable = flushed
-	for _, list := range pgqi.QueuedPodInfos {
-		for _, pInfo := range list {
+	for _, pInfos := range pgqi.QueuedPodInfos {
+		for _, pInfo := range pInfos {
 			pInfo.SetWasFlushedFromUnschedulable(flushed)
 		}
 	}
 }
 
 func (pgqi *QueuedPodGroupInfo) SetBackoffExpiration(t time.Time) {
+	// It doesn't have to set BackoffExpiration for all members, as they all share the same backoff
+	// expiration time.
 	pgqi.BackoffExpiration = t
 }
 
 func (pgqi *QueuedPodGroupInfo) SetGatingPlugin(gatingPlugin string, gatingEvents []fwk.ClusterEvent) {
+	// It shouldn't set GatingPlugin and GatingPluginEvents for all members,
+	// as each pod has its own gating plugin and events.
 	pgqi.GatingPlugin = gatingPlugin
 	pgqi.GatingPluginEvents = gatingEvents
 }
 
 func (pgqi *QueuedPodGroupInfo) SetFlushTimestamp(t time.Time) {
+	// We don't need to set it for all members as it's only checked at the root level.
 	pgqi.FlushTimestamp = t
 }
 
 // AddPodGroup adds a pod group to the queued pod group info hierarchy.
 func (pgqi *QueuedPodGroupInfo) AddPodGroup(pg *schedulingv1alpha3.PodGroup) {
-	if pgqi.GetNamespace() != pg.Namespace {
-		return
-	}
-	if pg.Spec.ParentCompositePodGroupName == nil {
+	// We only add non-root pod groups to the hierarchy, because the root
+	// pod group is already present in the hierarchy.
+	if !utilfeature.DefaultFeatureGate.Enabled(features.CompositePodGroup) || pg.Spec.ParentCompositePodGroupName == nil {
 		return
 	}
 
-	var addLeaf func(curr *PodGroupInfo) bool
-	addLeaf = func(curr *PodGroupInfo) bool {
-		if curr.GetCompositePodGroup() != nil && curr.GetName() == *pg.Spec.ParentCompositePodGroupName {
-			for _, child := range curr.Children {
-				if child.GetName() == pg.Name && child.GetNamespace() == pg.Namespace {
-					return true
-				}
-			}
-			pgInfo := &PodGroupInfo{
-				Namespace: pg.Namespace,
-				Name:      pg.Name,
-				Type:      fwk.PodGroupKeyType,
-				PodGroup:  pg,
-				Children:  make([]*PodGroupInfo, 0),
-			}
-			curr.Children = append(curr.Children, pgInfo)
-			return true
-		}
-		for _, child := range curr.Children {
-			if addLeaf(child) {
-				return true
+	parent, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, *pg.Spec.ParentCompositePodGroupName)
+	if parent != nil && parent.GetCompositePodGroup() != nil {
+		for _, child := range parent.Children {
+			if child.GetName() == pg.Name {
+				return
 			}
 		}
-		return false
+		pgInfo := &PodGroupInfo{
+			Namespace: pg.Namespace,
+			Name:      pg.Name,
+			Type:      fwk.PodGroupKeyType,
+			PodGroup:  pg,
+			Children:  make([]*PodGroupInfo, 0),
+		}
+		parent.Children = append(parent.Children, pgInfo)
 	}
-
-	addLeaf(pgqi.PodGroupInfo)
 }
 
 // UpdatePodGroup updates a pod group in the queued pod group info hierarchy.
-func (pgqi *QueuedPodGroupInfo) UpdatePodGroup(pg *schedulingv1alpha3.PodGroup) *QueuedPodGroupInfo {
-	if pgqi.GetNamespace() != pg.Namespace {
-		return nil
+func (pgqi *QueuedPodGroupInfo) UpdatePodGroup(pg *schedulingv1alpha3.PodGroup) {
+	node, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, pg.Name)
+	if node != nil && node.GetPodGroup() != nil {
+		node.PodGroup = pg
 	}
-
-	var updateLeaf func(curr *PodGroupInfo) bool
-	updateLeaf = func(curr *PodGroupInfo) bool {
-		if curr.GetPodGroup() != nil && curr.GetName() == pg.Name && curr.GetNamespace() == pg.Namespace {
-			curr.PodGroup = pg
-			return true
-		}
-		for _, child := range curr.Children {
-			if updateLeaf(child) {
-				return true
-			}
-		}
-		return false
-	}
-
-	if updateLeaf(pgqi.PodGroupInfo) {
-		return pgqi
-	}
-	return nil
 }
 
 // RemovePodGroup removes a pod group from the queued pod group info hierarchy.
+// It returns a slice of all pods withing the hierarchy of the removed pod group.
 func (pgqi *QueuedPodGroupInfo) RemovePodGroup(pg *schedulingv1alpha3.PodGroup) []*QueuedPodInfo {
-	if pgqi.GetNamespace() != pg.Namespace {
+	node, parent := findNodeAndParent(pgqi.PodGroupInfo, nil, pg.Name)
+	if node == nil {
 		return nil
 	}
 
-	key := pgKey(pg.Namespace, pg.Name)
-	removedPods := pgqi.QueuedPodInfos[key]
-	delete(pgqi.QueuedPodInfos, key)
-
-	if infoPg := pgqi.GetPodGroup(); infoPg != nil {
-		if infoPg.Name == pg.Name && infoPg.Namespace == pg.Namespace {
-			return removedPods
-		}
-		return nil
-	}
-
-	var removeLeaf func(curr *PodGroupInfo) bool
-	removeLeaf = func(curr *PodGroupInfo) bool {
-		for i, child := range curr.Children {
-			if child.GetPodGroup() != nil && child.GetName() == pg.Name && child.GetNamespace() == pg.Namespace {
-				curr.Children = append(curr.Children[:i], curr.Children[i+1:]...)
-				return true
-			}
-			if removeLeaf(child) {
-				return true
+	if parent != nil {
+		for i, child := range parent.Children {
+			if child.GetName() == pg.Name {
+				parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+				break
 			}
 		}
-		return false
 	}
 
-	if removeLeaf(pgqi.PodGroupInfo) {
-		return removedPods
-	}
-	return nil
+	return pgqi.deleteSubtreePods(node)
 }
 
 // AddCompositePodGroup adds a composite pod group to the queued pod group info hierarchy.
-func (pgqi *QueuedPodGroupInfo) AddCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) {
+func (pgqi *QueuedPodGroupInfo) AddCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup, subtree *PodGroupInfo) {
 	if cpg.Spec.ParentCompositePodGroupName == nil {
 		return
 	}
-	if pgqi.GetNamespace() != cpg.Namespace {
-		return
-	}
 
-	var addLeaf func(curr *PodGroupInfo) bool
-	addLeaf = func(curr *PodGroupInfo) bool {
-		if curr.GetCompositePodGroup() != nil && curr.GetName() == *cpg.Spec.ParentCompositePodGroupName {
-			for _, child := range curr.Children {
-				if child.GetName() == cpg.Name && child.GetNamespace() == cpg.Namespace {
-					return true
-				}
-			}
-			cpgInfo := &PodGroupInfo{
-				Namespace:         cpg.Namespace,
-				Name:              cpg.Name,
-				Type:              fwk.CompositePodGroupKeyType,
-				CompositePodGroup: cpg,
-				Children:          make([]*PodGroupInfo, 0),
-			}
-			curr.Children = append(curr.Children, cpgInfo)
-			return true
-		}
-		for _, child := range curr.Children {
-			if addLeaf(child) {
-				return true
+	parent, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, *cpg.Spec.ParentCompositePodGroupName)
+	if parent != nil && parent.GetCompositePodGroup() != nil {
+		for _, child := range parent.Children {
+			if child.GetName() == cpg.Name {
+				return
 			}
 		}
-		return false
+		parent.Children = append(parent.Children, subtree)
 	}
-
-	addLeaf(pgqi.PodGroupInfo)
 }
 
 // UpdateCompositePodGroup updates a composite pod group in the queued pod group info hierarchy.
 func (pgqi *QueuedPodGroupInfo) UpdateCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) {
-	if pgqi.GetNamespace() != cpg.Namespace {
-		return
+	node, _ := findNodeAndParent(pgqi.PodGroupInfo, nil, cpg.Name)
+	if node != nil && node.GetCompositePodGroup() != nil {
+		node.CompositePodGroup = cpg
 	}
-
-	var updateLeaf func(curr *PodGroupInfo) bool
-	updateLeaf = func(curr *PodGroupInfo) bool {
-		if curr.GetCompositePodGroup() != nil && curr.GetName() == cpg.Name && curr.GetNamespace() == cpg.Namespace {
-			curr.CompositePodGroup = cpg
-			return true
-		}
-		for _, child := range curr.Children {
-			if updateLeaf(child) {
-				return true
-			}
-		}
-		return false
-	}
-
-	updateLeaf(pgqi.PodGroupInfo)
 }
 
 // RemoveCompositePodGroup removes a composite pod group from the queued pod group info hierarchy.
+// It returns a slice of all pods withing the hierarchy of the removed composite pod group.
 func (pgqi *QueuedPodGroupInfo) RemoveCompositePodGroup(cpg *schedulingv1alpha3.CompositePodGroup) []*QueuedPodInfo {
-	if pgqi.GetNamespace() != cpg.Namespace {
+	node, parent := findNodeAndParent(pgqi.PodGroupInfo, nil, cpg.Name)
+	if node == nil {
 		return nil
 	}
 
+	if parent != nil {
+		for i, child := range parent.Children {
+			if child.GetName() == cpg.Name {
+				parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+				break
+			}
+		}
+	}
+
+	return pgqi.deleteSubtreePods(node)
+}
+
+// findNodeAndParent uses DFS to find a node by name in the hierarchy.
+// It returns the target node and its parent. If the target is the root, parent is nil.
+func findNodeAndParent(curr, parent *PodGroupInfo, name string) (*PodGroupInfo, *PodGroupInfo) {
+	if curr.GetName() == name {
+		return curr, parent
+	}
+	if curr.GetCompositePodGroup() != nil {
+		for _, child := range curr.Children {
+			if n, p := findNodeAndParent(child, curr, name); n != nil {
+				return n, p
+			}
+		}
+	}
+	return nil, nil
+}
+
+// deleteSubtreePods recursively traverses the subtree starting at the given node and removes
+// all encountered PodGroups from the pgqi.QueuedPodInfos map.
+// It returns a flat slice of all QueuedPodInfo elements that were successfully removed.
+func (pgqi *QueuedPodGroupInfo) deleteSubtreePods(curr *PodGroupInfo) []*QueuedPodInfo {
 	removedPods := make([]*QueuedPodInfo, 0)
-	var collectAndDelete func(node *PodGroupInfo)
-	collectAndDelete = func(node *PodGroupInfo) {
-		if node.GetPodGroup() != nil {
-			key := pgKey(node.Namespace, node.Name)
-			if pods, ok := pgqi.QueuedPodInfos[key]; ok {
-				removedPods = append(removedPods, pods...)
-				delete(pgqi.QueuedPodInfos, key)
-			}
-		}
-		for _, child := range node.Children {
-			collectAndDelete(child)
+	if curr.GetPodGroup() != nil {
+		key := PodGroupKey(curr.Namespace, curr.Name)
+		if pods, ok := pgqi.QueuedPodInfos[key]; ok {
+			removedPods = append(removedPods, pods...)
+			delete(pgqi.QueuedPodInfos, key)
 		}
 	}
-
-	if infoCPG := pgqi.GetCompositePodGroup(); infoCPG != nil {
-		if infoCPG.Name == cpg.Name && infoCPG.Namespace == cpg.Namespace {
-			collectAndDelete(pgqi.PodGroupInfo)
-			return removedPods
-		}
+	for _, child := range curr.Children {
+		removedPods = append(removedPods, pgqi.deleteSubtreePods(child)...)
 	}
-
-	var removeLeaf func(curr *PodGroupInfo) bool
-	removeLeaf = func(curr *PodGroupInfo) bool {
-		for i, child := range curr.Children {
-			if child.GetCompositePodGroup() != nil && child.GetName() == cpg.Name && child.GetNamespace() == cpg.Namespace {
-				collectAndDelete(child)
-				curr.Children = append(curr.Children[:i], curr.Children[i+1:]...)
-				return true
-			}
-			if removeLeaf(child) {
-				return true
-			}
-		}
-		return false
-	}
-
-	removeLeaf(pgqi.PodGroupInfo)
 	return removedPods
 }
 

@@ -70,7 +70,7 @@ func TestIncompletePodGroupPods_Add(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ie := newIncompletePodGroupPods()
 			for _, pInfo := range tt.podsToAdd {
-				ie.add(pInfo, podGroupKeyForPod(pInfo.Pod))
+				ie.add(pInfo)
 			}
 
 			if diff := cmp.Diff(tt.want, ie.podGroupToPodInfos, cmpopts.IgnoreUnexported(framework.PodInfo{})); diff != "" {
@@ -117,7 +117,7 @@ func TestIncompletePodGroupPods_Get(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ie := newIncompletePodGroupPods()
 			for _, pInfo := range tt.podsToAdd {
-				ie.add(pInfo, podGroupKeyForPod(pInfo.Pod))
+				ie.add(pInfo)
 			}
 
 			got := ie.get(tt.targetPod)
@@ -208,10 +208,10 @@ func TestIncompletePodGroupPods_Update(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ie := newIncompletePodGroupPods()
 			for _, pInfo := range tt.podsToAdd {
-				ie.add(pInfo.DeepCopy(), podGroupKeyForPod(pInfo.Pod))
+				ie.add(pInfo.DeepCopy())
 			}
 
-			got := ie.update(tt.updatePod, podGroupKeyForPod(tt.updatePod))
+			got := ie.update(tt.updatePod)
 			if diff := cmp.Diff(tt.wantUpdated, got, cmpopts.IgnoreUnexported(framework.PodInfo{})); diff != "" {
 				t.Errorf("Unexpected updated pod info (-want,+got)\n%s", diff)
 			}
@@ -272,10 +272,10 @@ func TestIncompletePodGroupPods_Delete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ie := newIncompletePodGroupPods()
 			for _, pInfo := range tt.podsToAdd {
-				ie.add(pInfo.DeepCopy(), pg1Key)
+				ie.add(pInfo.DeepCopy())
 			}
 
-			gotDeleted := ie.delete(tt.podToDelete, pg1Key)
+			gotDeleted := ie.delete(tt.podToDelete)
 			if diff := cmp.Diff(tt.wantDeleted, gotDeleted, cmpopts.IgnoreUnexported(framework.PodInfo{})); diff != "" {
 				t.Errorf("Unexpected deleted pod info (-want,+got)\n%s", diff)
 			}
@@ -335,7 +335,7 @@ func TestIncompletePodGroupPods_Clear(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ie := newIncompletePodGroupPods()
 			for _, pInfo := range tt.podsToAdd {
-				ie.add(pInfo, podGroupKeyForPod(pInfo.Pod))
+				ie.add(pInfo)
 			}
 
 			gotCleared := ie.clear(tt.clearGroup)

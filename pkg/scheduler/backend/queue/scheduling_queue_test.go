@@ -8068,7 +8068,7 @@ func TestPriorityQueue_AddCompositePodGroup_RootQueuesPods(t *testing.T) {
 	pInfo := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod)}
 
 	// Add to incompleteEntities waiting for root-cpg
-	cpgKey := compositePodGroupKeyFromName("root-cpg", "ns1")
+	cpgKey := framework.CompositePodGroupKey("ns1", "root-cpg")
 	q.incompleteEntities.add(pInfo, cpgKey)
 
 	// Call AddCompositePodGroup for root-cpg
@@ -8131,7 +8131,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootMissingAncestors(t *testing.T
 	pod := st.MakePod().Name("pod1").Namespace("ns1").UID("uid1").PodGroupName("pg1").Obj()
 	pInfo := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod)}
 
-	childCPGKey := compositePodGroupKeyFromName("child-cpg", "ns1")
+	childCPGKey := framework.CompositePodGroupKey("ns1", "child-cpg")
 	q.incompleteEntities.add(pInfo, childCPGKey)
 
 	// Call AddCompositePodGroup for child-cpg
@@ -8143,7 +8143,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootMissingAncestors(t *testing.T
 	}
 
 	// Verify pod is now waiting for parent-cpg (the highest level unobserved ancestor)
-	parentCPGKey := compositePodGroupKeyFromName("parent-cpg", "ns1")
+	parentCPGKey := framework.CompositePodGroupKey("ns1", "parent-cpg")
 	iePods := q.incompleteEntities.clear(parentCPGKey)
 	if len(iePods) != 1 || iePods[0].Pod.Name != "pod1" {
 		t.Errorf("Expected pod1 to be in incompleteEntities waiting for parent-cpg, got %v", iePods)
@@ -8190,7 +8190,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootRootExists(t *testing.T) {
 	pod := st.MakePod().Name("pod1").Namespace("ns1").UID("uid1").PodGroupName("pg1").Obj()
 	pInfo := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod)}
 
-	childCPGKey := compositePodGroupKeyFromName("child-cpg", "ns1")
+	childCPGKey := framework.CompositePodGroupKey("ns1", "child-cpg")
 	q.incompleteEntities.add(pInfo, childCPGKey)
 
 	// Call AddCompositePodGroup for child-cpg
@@ -8264,7 +8264,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootRootAlreadyInQueue(t *testing
 	// Place pod1 in incompleteEntities waiting for child-cpg
 	pod1 := st.MakePod().Name("pod1").Namespace("ns1").UID("uid1").PodGroupName("pg1").Obj()
 	pInfo1 := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod1)}
-	childCPGKey := compositePodGroupKeyFromName("child-cpg", "ns1")
+	childCPGKey := framework.CompositePodGroupKey("ns1", "child-cpg")
 	q.incompleteEntities.add(pInfo1, childCPGKey)
 
 	// Call AddCompositePodGroup for child-cpg
@@ -8338,7 +8338,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootRootMissingIntermediateExists
 	pod := st.MakePod().Name("pod1").Namespace("ns1").UID("uid1").PodGroupName("pg1").Obj()
 	pInfo := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod)}
 
-	childCPGKey := compositePodGroupKeyFromName("child-cpg", "ns1")
+	childCPGKey := framework.CompositePodGroupKey("ns1", "child-cpg")
 	q.incompleteEntities.add(pInfo, childCPGKey)
 
 	// Call AddCompositePodGroup for child-cpg
@@ -8350,7 +8350,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootRootMissingIntermediateExists
 	}
 
 	// Verify pod is now waiting for root-cpg (the highest level unobserved ancestor)
-	rootCPGKey := compositePodGroupKeyFromName("root-cpg", "ns1")
+	rootCPGKey := framework.CompositePodGroupKey("ns1", "root-cpg")
 	iePods := q.incompleteEntities.clear(rootCPGKey)
 	if len(iePods) != 1 || iePods[0].Pod.Name != "pod1" {
 		t.Errorf("Expected pod1 to be in incompleteEntities waiting for root-cpg, got %v", iePods)
@@ -8397,7 +8397,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootIntermediateMissing(t *testin
 	pod := st.MakePod().Name("pod1").Namespace("ns1").UID("uid1").PodGroupName("pg1").Obj()
 	pInfo := &framework.QueuedPodInfo{PodInfo: mustNewTestPodInfo(t, pod)}
 
-	childCPGKey := compositePodGroupKeyFromName("child-cpg", "ns1")
+	childCPGKey := framework.CompositePodGroupKey("ns1", "child-cpg")
 	q.incompleteEntities.add(pInfo, childCPGKey)
 
 	// Call AddCompositePodGroup for child-cpg
@@ -8409,7 +8409,7 @@ func TestPriorityQueue_AddCompositePodGroup_NonRootIntermediateMissing(t *testin
 	}
 
 	// Verify pod is now waiting for parent-cpg (the highest level unobserved ancestor)
-	parentCPGKey := compositePodGroupKeyFromName("parent-cpg", "ns1")
+	parentCPGKey := framework.CompositePodGroupKey("ns1", "parent-cpg")
 	iePods := q.incompleteEntities.clear(parentCPGKey)
 	if len(iePods) != 1 || iePods[0].Pod.Name != "pod1" {
 		t.Errorf("Expected pod1 to be in incompleteEntities waiting for parent-cpg, got %v", iePods)
@@ -8534,7 +8534,7 @@ func TestPriorityQueue_AddPodGroup_Hierarchical(t *testing.T) {
 		}
 
 		// Verify pod is now waiting for missing-cpg
-		missingCPGKey := compositePodGroupKeyFromName("missing-cpg", "ns1")
+		missingCPGKey := framework.CompositePodGroupKey("ns1", "missing-cpg")
 		iePods := q.incompleteEntities.clear(missingCPGKey)
 		if len(iePods) != 1 || iePods[0].Pod.Name != "pod1" {
 			t.Errorf("Expected pod1 in incompleteEntities waiting for missing-cpg, got %v", iePods)
