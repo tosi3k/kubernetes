@@ -719,8 +719,8 @@ type QueuedPodInfo struct {
 	PodSignature fwk.PodSignature
 }
 
-func (pqi *QueuedPodInfo) Type() string {
-	return "pod"
+func (pqi *QueuedPodInfo) Type() fwk.EntityKeyType {
+	return fwk.PodKeyType
 }
 
 func (pqi *QueuedPodInfo) ForEachPodInfo(fn func(pInfo *QueuedPodInfo) bool) {
@@ -819,8 +819,8 @@ type QueuedPodGroupInfo struct {
 	QueuedPodInfos map[string][]*QueuedPodInfo
 }
 
-func (pgqi *QueuedPodGroupInfo) Type() string {
-	return string(pgqi.GetType())
+func (pgqi *QueuedPodGroupInfo) Type() fwk.EntityKeyType {
+	return fwk.PodGroupKeyType
 }
 
 // AddPod adds a pod to the queued pod group info, if the pod belongs to the pod group.
@@ -1230,7 +1230,7 @@ type PodGroupInfo struct {
 	// Name is a name of this pod group.
 	Name string
 	// Type is a type of the pod group: either composite pod group or pod group.
-	Type fwk.GroupKeyType
+	Type fwk.EntityKeyType
 	// UnscheduledPods are pods that are currently being considered for scheduling.
 	// It can be useful to also retrieve the scheduled (assumed or assigned) pods.
 	// PodGroupManager.PodGroupState can be used for that.
@@ -1253,7 +1253,7 @@ func (pgi *PodGroupInfo) GetNamespace() string {
 	return pgi.Namespace
 }
 
-func (pgi *PodGroupInfo) GetType() fwk.GroupKeyType {
+func (pgi *PodGroupInfo) GetType() fwk.EntityKeyType {
 	return pgi.Type
 }
 

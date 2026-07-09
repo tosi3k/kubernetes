@@ -39,7 +39,7 @@ func nextPodGroupGeneration() int64 {
 
 // podGroupKey uniquely identifies a specific instance of a PodGroup.
 type podGroupKey struct {
-	keyType   fwk.GroupKeyType
+	keyType   fwk.EntityKeyType
 	name      string
 	namespace string
 }
@@ -58,7 +58,7 @@ func (pgk podGroupKey) String() string {
 
 var _ klog.KMetadata = &podGroupKey{}
 
-func newPodGroupKey(keyType fwk.GroupKeyType, namespace string, name string) podGroupKey {
+func newPodGroupKey(keyType fwk.EntityKeyType, namespace string, name string) podGroupKey {
 	return podGroupKey{
 		keyType:   keyType,
 		namespace: namespace,

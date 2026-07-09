@@ -305,7 +305,7 @@ type NodeInfo interface {
 // It can be a single Pod (QueuedPodInfo) or a group of Pods (QueuedPodGroupInfo).
 type QueuedEntityInfo interface {
 	// Type returns the type of the entity, e.g., "pod" or "podgroup".
-	Type() string
+	Type() EntityKeyType
 	// GetPriority returns the priority of the entity.
 	GetPriority() int32
 	// GetTimestamp returns the time entity added to the scheduling queue.
@@ -643,12 +643,13 @@ func (h HostPortInfo) sanitize(ip, protocol *string) {
 	}
 }
 
-// GroupKeyType is the type of a pod group.
-type GroupKeyType string
+// EntityKeyType is the type of a pod group.
+type EntityKeyType string
 
 const (
-	PodGroupKeyType          GroupKeyType = "podgroup"
-	CompositePodGroupKeyType GroupKeyType = "compositepodgroup"
+	PodKeyType               EntityKeyType = "pod"
+	PodGroupKeyType          EntityKeyType = "podgroup"
+	CompositePodGroupKeyType EntityKeyType = "compositepodgroup"
 )
 
 // PodGroupInfo is a wrapper around the PodGroup API object together with a list of unscheduled pods that belong to the pod group.
@@ -664,7 +665,7 @@ type PodGroupInfo interface {
 	// GetNamespace returns the namespace the pod group belongs to.
 	GetNamespace() string
 	// GetType returns the type of the pod group.
-	GetType() GroupKeyType
+	GetType() EntityKeyType
 	// GetKey returns the key uniquely identifying the pod group.
 	GetKey() string
 	// GetPodGroup returns the PodGroup API object or nil if the group is a composite pod group.

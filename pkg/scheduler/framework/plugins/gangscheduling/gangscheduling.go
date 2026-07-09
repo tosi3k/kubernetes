@@ -639,7 +639,7 @@ func (pl *GangScheduling) placementFeasibleForPodGroup(ctx context.Context, plac
 	return nil
 }
 
-func unpackChildKey(childKey string) (fwk.GroupKeyType, string, string) {
+func unpackChildKey(childKey string) (fwk.EntityKeyType, string, string) {
 	parts := strings.Split(childKey, "/")
-	return fwk.GroupKeyType(parts[0]), parts[1], parts[2]
+	return fwk.EntityKeyType(parts[0]), parts[1], parts[2]
 }
