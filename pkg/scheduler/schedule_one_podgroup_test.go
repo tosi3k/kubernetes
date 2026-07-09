@@ -567,7 +567,7 @@ func TestPodGroupCycle_FillsPodResultsOnFewerResults(t *testing.T) {
 	}
 	sched.SchedulePod = sched.schedulePod
 
-	schedulePodResult, _ := sched.podGroupSchedulingAlgorithm(ctx, schedFwk, framework.NewCycleState(), podGroupInfo.PodGroupInfo, queuedPodInfos, runAllPostFilters)
+	schedulePodResult, _ := sched.podGroupSchedulingAlgorithm(ctx, schedFwk, framework.NewCycleState(), podGroupInfo.PodGroupInfo, podGroupInfo, runAllPostFilters)
 	if len(schedulePodResult.podResults) != 2 {
 		t.Errorf("Expected 2 pod results, got %d", len(schedulePodResult.podResults))
 	}
@@ -1145,7 +1145,7 @@ func TestPodGroupSchedulingAlgorithm(t *testing.T) {
 					t.Fatalf("Failed to update snapshot: %v", err)
 				}
 
-				result, _ := sched.podGroupSchedulingAlgorithm(ctx, schedFwk, framework.NewCycleState(), podGroupInfo.PodGroupInfo, queuedPodInfos, runAllPostFilters)
+				result, _ := sched.podGroupSchedulingAlgorithm(ctx, schedFwk, framework.NewCycleState(), podGroupInfo.PodGroupInfo, podGroupInfo, runAllPostFilters)
 
 				if result.status.Code() != tt.expectedGroupStatusCode {
 					t.Errorf("Expected group status code: %v, got: %v", tt.expectedGroupStatusCode, result.status.Code())
@@ -2492,7 +2492,7 @@ func TestPodGroupSchedulingPlacementAlgorithm(t *testing.T) {
 				},
 			}
 
-			result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, queuedPodInfos, runAllPostFilters)
+			result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, pgInfo, runAllPostFilters)
 
 			if result.podGroupInfo != pgInfo.PodGroupInfo {
 				t.Errorf("Unexpected podGroupInfo field (-want,+got):\n- %v\n+ %v", pgInfo, result.podGroupInfo)
@@ -2668,7 +2668,7 @@ func TestPodGroupSchedulingPlacementAlgorithm_Scoring(t *testing.T) {
 				},
 			}
 
-			result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, queuedPodInfos, runAllPostFilters)
+			result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, pgInfo, runAllPostFilters)
 
 			expectedHost := placements[tt.expectedPlacement][0]
 			actualHost := result.podResults[0].scheduleResult.SuggestedHost
@@ -2841,7 +2841,7 @@ func TestPlacementCycleStateLifecycle(t *testing.T) {
 		},
 	}
 
-	result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, queuedPodInfos, runAllPostFilters)
+	result := sched.podGroupSchedulingPlacementAlgorithm(ctx, schedFwk, framework.NewCycleState(), pgInfo.PodGroupInfo, pgInfo, runAllPostFilters)
 	if !result.status.IsSuccess() {
 		t.Fatalf("Expected success, got: %v", result.status)
 	}

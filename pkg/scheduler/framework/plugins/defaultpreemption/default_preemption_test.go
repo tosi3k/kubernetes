@@ -2883,6 +2883,72 @@ func TestDefaultPreemption_PodGroupPostFilter_InvalidSnapshot(t *testing.T) {
 	}
 }
 
+func TestDefaultPreemption_PodGroupPostFilter_CompositePodGroup(t *testing.T) {
+	logger, ctx := ktesting.NewTestContext(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pgOk := st.MakePodGroup().Name("preemptor-pg-ok").Priority(highPriority).Obj()
+	client := clientsetfake.NewClientset(pgOk)
+	informerFactory := informers.NewSharedInformerFactory(client, 0)
+	registeredPlugins := []tf.RegisterPluginFunc{
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+	}
+
+	cache := internalcache.New(ctx, nil, true, true /* compositePodGroupEnabled */)
+	cache.AddPodGroup(pgOk)
+
+	snapshot := internalcache.NewEmptySnapshot()
+	f, err := tf.NewFramework(ctx, registeredPlugins, "",
+		frameworkruntime.WithClientSet(client),
+		frameworkruntime.WithSnapshotSharedLister(snapshot),
+		frameworkruntime.WithMutableSnapshotLister(snapshot),
+		frameworkruntime.WithInformerFactory(informerFactory),
+		frameworkruntime.WithLogger(logger),
+		frameworkruntime.WithPodGroupManager(cache),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	features := feature.Features{
+		EnableGenericWorkload: true,
+	}
+	pl, err := New(ctx, getDefaultDefaultPreemptionArgs(), f, features)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	preemptorPods := []*v1.Pod{st.MakePod().Name("p").UID("p").Priority(highPriority).Obj()}
+	mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+		return nil, nil
+	}
+
+	cpg := &v1alpha3.CompositePodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cpg",
+			Namespace: "default",
+		},
+	}
+	pgInfo := &framework.PodGroupInfo{
+		Name:              cpg.Name,
+		Namespace:         cpg.Namespace,
+		Type:              fwk.CompositePodGroupKeyType,
+		UnscheduledPods:   preemptorPods,
+		CompositePodGroup: cpg,
+	}
+
+	_, gotStatus := pl.PodGroupPostFilter(ctx, pgInfo, mockSchedulingFunc)
+	if gotStatus.Code() != fwk.Unschedulable {
+		t.Fatalf("Expected status code %v, got status: %v", fwk.Unschedulable, gotStatus)
+	}
+	expectedMsg := "pod group preemption: not supported for composite pod groups yet"
+	if gotStatus.Message() != expectedMsg {
+		t.Errorf("Expected error message %q, got %q", expectedMsg, gotStatus.Message())
+	}
+}
+
 type mockMutableSnapshotLister struct {
 	fwk.MutableSnapshotSharedLister
 	startMutationError error

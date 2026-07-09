@@ -438,6 +438,9 @@ func filterPodsWithPDBViolation(podInfos []fwk.PodInfo, pdbs []*policy.PodDisrup
 
 // PodGroupPostFilter runs a default preemption for the pod group.
 func (pl *DefaultPreemption) PodGroupPostFilter(ctx context.Context, pgInfo fwk.PodGroupInfo, pgSchedulingFunc framework.PodGroupSchedulingFunc) (postFilterResult *framework.PodGroupPostFilterResult, status *fwk.Status) {
+	if pgInfo.GetCompositePodGroup() != nil {
+		return nil, fwk.NewStatus(fwk.Unschedulable, "pod group preemption: not supported for composite pod groups yet")
+	}
 	pg := pgInfo.GetPodGroup()
 
 	if pg.Spec.SchedulingConstraints != nil && len(pg.Spec.SchedulingConstraints.Topology) > 0 {
