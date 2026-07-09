@@ -1247,19 +1247,21 @@ func (cache *cacheImpl) RemoveCompositePodGroup(cpg *schedulingv1alpha3.Composit
 	if !exists {
 		return
 	}
-	delete(cache.compositePodGroupStates, key)
 
-	if cpgs.compositePodGroup == nil || cpgs.compositePodGroup.Spec.ParentCompositePodGroupName == nil {
-		return
+	if cpgs.compositePodGroup != nil && cpgs.compositePodGroup.Spec.ParentCompositePodGroupName != nil {
+		parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, *cpgs.compositePodGroup.Spec.ParentCompositePodGroupName)
+		parent, exists := cache.compositePodGroupStates[parentKey]
+		if !exists {
+			return
+		}
+		parent.removeChild(&key)
+		if parent.empty() {
+			delete(cache.compositePodGroupStates, parentKey)
+		}
 	}
 
-	parentKey := newPodGroupKey(fwk.CompositePodGroupKeyType, cpg.Namespace, *cpgs.compositePodGroup.Spec.ParentCompositePodGroupName)
-	parent, exists := cache.compositePodGroupStates[parentKey]
-	if !exists {
-		return
-	}
-	parent.removeChild(&key)
-	if parent.empty() {
-		delete(cache.compositePodGroupStates, parentKey)
+	cpgs.removeCompositePodGroup()
+	if cpgs.empty() {
+		delete(cache.compositePodGroupStates, key)
 	}
 }

@@ -115,9 +115,6 @@ type Snapshot struct {
 	snapshotBackup *snapshotBackupData
 	// compositePodGroupEnabled stores the CompositePodGroup feature gate value.
 	compositePodGroupEnabled bool
-	// hasBackup holds information whether backup was performed and
-	// restore was not performed yet.
-	hasBackup bool
 }
 
 var _ fwk.SharedLister = &Snapshot{}

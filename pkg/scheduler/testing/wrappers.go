@@ -1732,6 +1732,12 @@ func (wrapper *PodGroupTemplateWrapper) Name(name string) *PodGroupTemplateWrapp
 	return wrapper
 }
 
+// Priority sets the priority of the inner PodGroupTemplate.
+func (wrapper *PodGroupTemplateWrapper) Priority(priority int32) *PodGroupTemplateWrapper {
+	wrapper.PodGroupTemplate.Priority = &priority
+	return wrapper
+}
+
 // MinCount sets the MinCount for the Gang scheduling policy.
 func (wrapper *PodGroupTemplateWrapper) MinCount(count int32) *PodGroupTemplateWrapper {
 	if wrapper.SchedulingPolicy.Gang == nil {
@@ -1802,6 +1808,12 @@ func (wrapper *CompositePodGroupTemplateWrapper) Name(name string) *CompositePod
 	return wrapper
 }
 
+// Priority sets the priority of the inner CompositePodGroupTemplate.
+func (wrapper *CompositePodGroupTemplateWrapper) Priority(priority int32) *CompositePodGroupTemplateWrapper {
+	wrapper.CompositePodGroupTemplate.Priority = &priority
+	return wrapper
+}
+
 // Children adds children to the CompositePodGroupTemplate.
 // It accepts *PodGroupTemplateWrapper and *CompositePodGroupTemplateWrapper.
 func (wrapper *CompositePodGroupTemplateWrapper) Children(children ...any) *CompositePodGroupTemplateWrapper {
@@ -1848,6 +1860,12 @@ func (wrapper *CompositePodGroupWrapper) Obj() *schedulingapi.CompositePodGroup 
 // Name sets `name` as the name of the inner CompositePodGroup.
 func (wrapper *CompositePodGroupWrapper) Name(name string) *CompositePodGroupWrapper {
 	wrapper.CompositePodGroup.Name = name
+	return wrapper
+}
+
+// Priority sets the priority of the inner CompositePodGroup.
+func (wrapper *CompositePodGroupWrapper) Priority(priority int32) *CompositePodGroupWrapper {
+	wrapper.CompositePodGroup.Spec.Priority = &priority
 	return wrapper
 }
 

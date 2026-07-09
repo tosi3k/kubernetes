@@ -75,13 +75,13 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 	// Create a Workload object for the entire hierarchy
 	workload := st.MakeWorkload().Name("workload-cpg").
 		Children(
-			st.MakeCompositePodGroupTemplate().Name("root-t").MinGroupCount(2).Children(
-				st.MakeCompositePodGroupTemplate().Name("sub1-3-t").MinGroupCount(2).Children(
-					st.MakePodGroupTemplate().Name("gang-t1").MinCount(3),
+			st.MakeCompositePodGroupTemplate().Name("root-t").MinGroupCount(2).Priority(100).Children(
+				st.MakeCompositePodGroupTemplate().Name("sub1-3-t").MinGroupCount(2).Priority(100).Children(
+					st.MakePodGroupTemplate().Name("gang-t1").MinCount(3).Priority(100),
 				),
-				st.MakeCompositePodGroupTemplate().Name("sub2-t").BasicPolicy().Children(
-					st.MakePodGroupTemplate().Name("basic-t").BasicPolicy(),
-					st.MakePodGroupTemplate().Name("gang-t2").MinCount(3),
+				st.MakeCompositePodGroupTemplate().Name("sub2-t").BasicPolicy().Priority(100).Children(
+					st.MakePodGroupTemplate().Name("basic-t").BasicPolicy().Priority(100),
+					st.MakePodGroupTemplate().Name("gang-t2").MinCount(3).Priority(100),
 				),
 			),
 		).Obj()
@@ -91,27 +91,27 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 	}
 
 	// Level 1: Root CPG
-	rootCPG := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-root").WorkloadRef("workload-cpg", "root-t").MinGroupCount(2).Obj()
+	rootCPG := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-root").WorkloadRef("workload-cpg", "root-t").MinGroupCount(2).Priority(100).Obj()
 	if _, err := cs.SchedulingV1alpha3().CompositePodGroups(ns).Create(testCtx.Ctx, rootCPG, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create root CPG: %v", err)
 	}
 
 	// Level 2: cpg-sub1 (Gang, Min: 2)
-	cpgSub1 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub1").WorkloadRef("workload-cpg", "sub1-3-t").MinGroupCount(2).ParentCompositePodGroup("cpg-root").Obj()
+	cpgSub1 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub1").WorkloadRef("workload-cpg", "sub1-3-t").MinGroupCount(2).ParentCompositePodGroup("cpg-root").Priority(100).Obj()
 
 	if _, err := cs.SchedulingV1alpha3().CompositePodGroups(ns).Create(testCtx.Ctx, cpgSub1, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create cpg-sub1: %v", err)
 	}
 
 	// Level 2: cpg-sub2 (Basic)
-	cpgSub2 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub2").WorkloadRef("workload-cpg", "sub2-t").BasicPolicy().ParentCompositePodGroup("cpg-root").Obj()
+	cpgSub2 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub2").WorkloadRef("workload-cpg", "sub2-t").BasicPolicy().ParentCompositePodGroup("cpg-root").Priority(100).Obj()
 
 	if _, err := cs.SchedulingV1alpha3().CompositePodGroups(ns).Create(testCtx.Ctx, cpgSub2, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create cpg-sub2: %v", err)
 	}
 
 	// Level 2: cpg-sub3 (Gang, Min: 2)
-	cpgSub3 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub3").WorkloadRef("workload-cpg", "sub1-3-t").MinGroupCount(2).ParentCompositePodGroup("cpg-root").Obj()
+	cpgSub3 := st.MakeCompositePodGroup().Namespace(ns).Name("cpg-sub3").WorkloadRef("workload-cpg", "sub1-3-t").MinGroupCount(2).ParentCompositePodGroup("cpg-root").Priority(100).Obj()
 
 	if _, err := cs.SchedulingV1alpha3().CompositePodGroups(ns).Create(testCtx.Ctx, cpgSub3, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create cpg-sub3: %v", err)
@@ -119,25 +119,18 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 
 	// Helper function to create PodGroups
 	createPG := func(name string, template string, minCount int32, parentCPG string) {
-		var policy schedulingapi.PodGroupSchedulingPolicy
+		pgWrapper := st.MakePodGroup().Namespace(ns).Name(name).
+			WorkloadRef(template, "workload-cpg").
+			ParentCompositePodGroup(parentCPG).
+			Priority(100)
+
 		if minCount > 0 {
-			policy = schedulingapi.PodGroupSchedulingPolicy{
-				Gang: &schedulingapi.GangSchedulingPolicy{MinCount: minCount},
-			}
+			pgWrapper.MinCount(minCount)
 		} else {
-			policy = schedulingapi.PodGroupSchedulingPolicy{
-				Basic: &schedulingapi.BasicSchedulingPolicy{},
-			}
+			pgWrapper.BasicPolicy()
 		}
-		pg := &schedulingapi.PodGroup{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec: schedulingapi.PodGroupSpec{
-				WorkloadRef:                 &schedulingapi.WorkloadReference{WorkloadName: "workload-pg", TemplateName: template},
-				SchedulingPolicy:            policy,
-				ParentCompositePodGroupName: ptr.To(parentCPG),
-			},
-		}
-		if _, err := cs.SchedulingV1alpha3().PodGroups(ns).Create(testCtx.Ctx, pg, metav1.CreateOptions{}); err != nil {
+
+		if _, err := cs.SchedulingV1alpha3().PodGroups(ns).Create(testCtx.Ctx, pgWrapper.Obj(), metav1.CreateOptions{}); err != nil {
 			t.Fatalf("Failed to create PG %s: %v", name, err)
 		}
 	}
@@ -155,7 +148,7 @@ func TestCPGHierarchicalScheduling(t *testing.T) {
 
 	// Helper function to create Pods
 	createPods := func(pgName string, count int, reqCPU string, schedulable bool) {
-		for i := 0; i < count; i++ {
+		for i := range count {
 			pod := st.MakePod().Namespace(ns).Name(fmt.Sprintf("%s-pod-%d", pgName, i)).
 				PodGroupName(pgName).Priority(100).Obj()
 
