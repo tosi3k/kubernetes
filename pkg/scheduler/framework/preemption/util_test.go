@@ -271,53 +271,46 @@ func TestMoreImportantVictim(t *testing.T) {
 	before := &metav1.Time{Time: time.Unix(500, 0)}
 
 	tests := []struct {
-		name                   string
-		vi1                    *victim
-		vi2                    *victim
-		genericWorkloadEnabled bool
-		want                   bool
+		name string
+		vi1  *victim
+		vi2  *victim
+		want bool
 	}{
 		{
-			name:                   "vi1 has higher priority",
-			vi1:                    &victim{priority: 20},
-			vi2:                    &victim{priority: 10},
-			genericWorkloadEnabled: true,
-			want:                   true,
+			name: "vi1 has higher priority",
+			vi1:  &victim{priority: 20, keyType: fwk.PodKeyType},
+			vi2:  &victim{priority: 10, keyType: fwk.PodKeyType},
+			want: true,
 		},
 		{
-			name:                   "vi2 has higher priority",
-			vi1:                    &victim{priority: 10},
-			vi2:                    &victim{priority: 20},
-			genericWorkloadEnabled: true,
-			want:                   false,
+			name: "vi2 has higher priority",
+			vi1:  &victim{priority: 10, keyType: fwk.PodKeyType},
+			vi2:  &victim{priority: 20, keyType: fwk.PodKeyType},
+			want: false,
 		},
 		{
-			name:                   "vi1 is PG, vi2 is Pod, same priority",
-			vi1:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())}},
-			vi2:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}},
-			genericWorkloadEnabled: true,
-			want:                   true,
+			name: "vi1 is PG, vi2 is Pod, same priority",
+			vi1:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())}, keyType: fwk.PodGroupKeyType},
+			vi2:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, keyType: fwk.PodKeyType},
+			want: true,
 		},
 		{
-			name:                   "vi1 is Pod, vi2 is PG, same priority",
-			vi1:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}},
-			vi2:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())}},
-			genericWorkloadEnabled: true,
-			want:                   false,
+			name: "vi1 is Pod, vi2 is PG, same priority",
+			vi1:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, keyType: fwk.PodKeyType},
+			vi2:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())}, keyType: fwk.PodGroupKeyType},
+			want: false,
 		},
 		{
-			name:                   "both Pods, vi1 older",
-			vi1:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: before},
-			vi2:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: now},
-			genericWorkloadEnabled: true,
-			want:                   true,
+			name: "both Pods, vi1 older",
+			vi1:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: before, keyType: fwk.PodKeyType},
+			vi2:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: now, keyType: fwk.PodKeyType},
+			want: true,
 		},
 		{
-			name:                   "both Pods, vi2 older",
-			vi1:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: now},
-			vi2:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: before},
-			genericWorkloadEnabled: true,
-			want:                   false,
+			name: "both Pods, vi2 older",
+			vi1:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: now, keyType: fwk.PodKeyType},
+			vi2:  &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: before, keyType: fwk.PodKeyType},
+			want: false,
 		},
 		{
 			name: "both PGs, vi1 larger",
@@ -327,15 +320,16 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
+				keyType: fwk.PodGroupKeyType,
 			},
 			vi2: &victim{
 				priority: 10,
 				pods: []fwk.PodInfo{
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
+				keyType: fwk.PodGroupKeyType,
 			},
-			genericWorkloadEnabled: true,
-			want:                   true,
+			want: true,
 		},
 		{
 			name: "both PGs, vi2 larger",
@@ -344,6 +338,7 @@ func TestMoreImportantVictim(t *testing.T) {
 				pods: []fwk.PodInfo{
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
+				keyType: fwk.PodGroupKeyType,
 			},
 			vi2: &victim{
 				priority: 10,
@@ -351,9 +346,9 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
+				keyType: fwk.PodGroupKeyType,
 			},
-			genericWorkloadEnabled: true,
-			want:                   false,
+			want: false,
 		},
 		{
 			name: "both PGs, same size, vi1 older",
@@ -364,6 +359,7 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
 				earliestStartTime: before,
+				keyType:           fwk.PodGroupKeyType,
 			},
 			vi2: &victim{
 				priority: 10,
@@ -372,9 +368,9 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
 				earliestStartTime: now,
+				keyType:           fwk.PodGroupKeyType,
 			},
-			genericWorkloadEnabled: true,
-			want:                   true,
+			want: true,
 		},
 		{
 			name: "both PGs, same size, vi2 older",
@@ -385,6 +381,7 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
 				earliestStartTime: now,
+				keyType:           fwk.PodGroupKeyType,
 			},
 			vi2: &victim{
 				priority: 10,
@@ -393,56 +390,15 @@ func TestMoreImportantVictim(t *testing.T) {
 					newPodInfo(st.MakePod().PodGroupName("pg").Obj()),
 				},
 				earliestStartTime: before,
+				keyType:           fwk.PodGroupKeyType,
 			},
-			genericWorkloadEnabled: true,
-			want:                   false,
-		},
-		{
-			name: "GenereicWorkload disabled: vi1 is larger PodGroup but newer, vi2 is older Pod — start time wins",
-			vi1: &victim{
-				priority:          10,
-				pods:              []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj()), newPodInfo(st.MakePod().PodGroupName("pg").Obj())},
-				earliestStartTime: now,
-			},
-			vi2:                    &victim{priority: 10, pods: []fwk.PodInfo{newPodInfo(st.MakePod().Obj())}, earliestStartTime: before},
-			genericWorkloadEnabled: false,
-			want:                   false,
-		},
-		{
-			name: "GenereicWorkload disabled: both PGs, vi1 larger but newer — start time wins",
-			vi1: &victim{
-				priority:          10,
-				pods:              []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj()), newPodInfo(st.MakePod().PodGroupName("pg").Obj())},
-				earliestStartTime: now,
-			},
-			vi2: &victim{
-				priority:          10,
-				pods:              []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())},
-				earliestStartTime: before,
-			},
-			genericWorkloadEnabled: false,
-			want:                   false,
-		},
-		{
-			name: "GenereicWorkload disabled: both PGs, vi1 larger and older — start time wins",
-			vi1: &victim{
-				priority:          10,
-				pods:              []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj()), newPodInfo(st.MakePod().PodGroupName("pg").Obj())},
-				earliestStartTime: before,
-			},
-			vi2: &victim{
-				priority:          10,
-				pods:              []fwk.PodInfo{newPodInfo(st.MakePod().PodGroupName("pg").Obj())},
-				earliestStartTime: now,
-			},
-			genericWorkloadEnabled: false,
-			want:                   true,
+			want: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MoreImportantVictim(tt.vi1, tt.vi2, tt.genericWorkloadEnabled)
+			got := MoreImportantVictim(tt.vi1, tt.vi2)
 			if got != tt.want {
 				t.Errorf("MoreImportantVictim() = %v, want %v", got, tt.want)
 			}

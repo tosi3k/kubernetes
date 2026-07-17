@@ -229,7 +229,7 @@ func (ev *PodGroupEvaluator) selectVictimsOnDomain(
 	}
 
 	sort.Slice(potentialVictims, func(i, j int) bool {
-		return MoreImportantVictim(potentialVictims[i], potentialVictims[j], true)
+		return MoreImportantVictim(potentialVictims[i], potentialVictims[j])
 	})
 
 	violatingVictims, nonViolatingVictims := FilterVictimsWithPDBViolation(potentialVictims, pdbs)
@@ -320,7 +320,7 @@ func (ev *PodGroupEvaluator) selectVictimsOnDomain(
 	}
 
 	sort.Slice(victimsToPreempt, func(i, j int) bool {
-		return MoreImportantVictim(victimsToPreempt[i], victimsToPreempt[j], true)
+		return MoreImportantVictim(victimsToPreempt[i], victimsToPreempt[j])
 	})
 	numPodGroupDisruptions := 0
 	var podsToPreempt []*v1.Pod

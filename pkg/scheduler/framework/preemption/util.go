@@ -46,9 +46,8 @@ func PodTerminatingByPreemption(p *v1.Pod) bool {
 //  1. Priority:
 //     Higher priority units are more important.
 //
-//  2. Workload Type (if enabled):
-//     If GenericWorkload is enabled, PodGroups are considered more important
-//     than individual Pods to preserve group integrity.
+//  2. Workload Type:
+//     PodGroups are considered more important than individual Pods to preserve group integrity.
 //
 //  3. Runtime / Start Time (for individual Pods):
 //     For two individual Pods, the one that started earlier (longer runtime)
@@ -61,24 +60,32 @@ func PodTerminatingByPreemption(p *v1.Pod) bool {
 //  5. Start Time (Tie-breaker for PodGroups):
 //     If sizes are equal, the group that started earlier (has the oldest pod)
 //     is more important.
-func MoreImportantVictim(vi1, vi2 Victim, genericWorkloadEnabled bool) bool {
+func MoreImportantVictim(vi1, vi2 Victim) bool {
 	if vi1.Priority() != vi2.Priority() {
 		return vi1.Priority() > vi2.Priority()
 	}
 
-	if !genericWorkloadEnabled {
-		return vi1.EarliestStartTime().Before(vi2.EarliestStartTime())
+	rank1 := victimRank(vi1)
+	rank2 := victimRank(vi2)
+
+	if rank1 != rank2 {
+		return rank1 > rank2
 	}
 
-	if vi1.IsPodGroup() != vi2.IsPodGroup() {
-		return vi1.IsPodGroup()
-	}
-
-	if vi1.IsPodGroup() && len(vi1.Pods()) != len(vi2.Pods()) {
+	if len(vi1.Pods()) != len(vi2.Pods()) {
 		return len(vi1.Pods()) > len(vi2.Pods())
 	}
 
 	return vi1.EarliestStartTime().Before(vi2.EarliestStartTime())
+}
+
+func victimRank(vi Victim) int {
+	switch vi.Type() {
+	case fwk.PodGroupKeyType:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // GetPodPriority returns the effective preemption priority of a pod. If the pod belongs to

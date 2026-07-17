@@ -929,7 +929,7 @@ func TestGetVictimsOnNode(t *testing.T) {
 			expectedKeys := sets.New[string]()
 			for _, ev := range tt.expectedVictims {
 				pods := ev.Pods()
-				dv, err := newDomainVictim(snapshot, pods, ev.Priority())
+				dv, err := newDomainVictim(snapshot, pods, ev.Priority(), ev.Type())
 				if err != nil {
 					t.Fatal(err)
 				}

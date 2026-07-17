@@ -133,12 +133,10 @@ func New(_ context.Context, dpArgs runtime.Object, fh fwk.Handle, fts feature.Fe
 
 	// Default behavior, defines the order for victims sorting. The order is:
 	// 1. Higher Priority.
-	// 2. If GenericWorkload is enabled: PodGroup > Individual Pod.
+	// 2. Workload Type: PodGroup > Individual Pod.
 	// 3. For individual Pods: Older StartTime (longer runtime).
 	// 4. For PodGroups: Larger Group Size, then Older StartTime.
-	pl.MoreImportantVictim = func(vi1, vi2 preemption.Victim) bool {
-		return preemption.MoreImportantVictim(vi1, vi2, pl.fts.EnableGenericWorkload)
-	}
+	pl.MoreImportantVictim = preemption.MoreImportantVictim
 
 	return &pl, nil
 }

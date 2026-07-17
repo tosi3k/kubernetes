@@ -1911,7 +1911,7 @@ func TestCustomOrdering(t *testing.T) {
 		if vi1.IsPodGroup() != vi2.IsPodGroup() {
 			return !vi1.IsPodGroup()
 		}
-		return preemption.MoreImportantVictim(vi1, vi2, true)
+		return preemption.MoreImportantVictim(vi1, vi2)
 	}
 	orderBySmallerPodGroupOverLargerVictim := func(vi1, vi2 preemption.Victim) bool {
 		sort.Slice(vi1.Pods(), func(i, j int) bool {
@@ -1923,7 +1923,7 @@ func TestCustomOrdering(t *testing.T) {
 		if vi1.IsPodGroup() && vi2.IsPodGroup() && len(vi1.Pods()) != len(vi2.Pods()) {
 			return len(vi1.Pods()) < len(vi2.Pods())
 		}
-		return preemption.MoreImportantVictim(vi1, vi2, true)
+		return preemption.MoreImportantVictim(vi1, vi2)
 	}
 	orderByPodGroupNameVictim := func(vi1, vi2 preemption.Victim) bool {
 		sort.Slice(vi1.Pods(), func(i, j int) bool {
@@ -1939,7 +1939,7 @@ func TestCustomOrdering(t *testing.T) {
 				return *pg1 < *pg2
 			}
 		}
-		return preemption.MoreImportantVictim(vi1, vi2, true)
+		return preemption.MoreImportantVictim(vi1, vi2)
 	}
 
 	tests := []struct {

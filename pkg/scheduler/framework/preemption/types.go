@@ -137,7 +137,7 @@ func isDisruptionModeAll(pg *schedulingapi.PodGroup) bool {
 func createDomainVictims(snapshot fwk.SharedLister, victims []Victim) ([]*DomainVictim, error) {
 	var allPossibleVictims []*DomainVictim
 	for _, vi := range victims {
-		v, err := newDomainVictim(snapshot, vi.Pods(), vi.Priority())
+		v, err := newDomainVictim(snapshot, vi.Pods(), vi.Priority(), vi.Type())
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func getCrossNodesVictims(snapshot fwk.SharedLister, podGroupSnapshot fwk.PodGro
 		}
 
 		// It can only return an error for empty podInfos, which is guaranteed not to be empty here.
-		victim, _ := NewVictim(podInfos, util.PodGroupPriority(pg))
+		victim, _ := NewVictim(podInfos, util.PodGroupPriority(pg), fwk.PodGroupKeyType)
 
 		return victim
 	}
@@ -241,6 +241,9 @@ type Victim interface {
 	// IsPodGroup returns true if the preemption unit represents a PodGroup.
 	// This function should be executed only when GenericWorkload feature is enabled.
 	IsPodGroup() bool
+
+	// Type returns the type of the preemption unit.
+	Type() fwk.EntityKeyType
 }
 
 // victim is the concrete implementation of the Victim interface, bundling pods with their
@@ -250,6 +253,7 @@ type victim struct {
 	pods              []fwk.PodInfo
 	priority          int32
 	earliestStartTime *metav1.Time
+	keyType           fwk.EntityKeyType
 }
 
 var _ Victim = &victim{}
@@ -275,7 +279,12 @@ func (v *victim) EarliestStartTime() *metav1.Time {
 // IsPodGroup returns true if the preemption unit represents a PodGroup.
 // This function should be executed only when GenericWorkload feature is enabled.
 func (v *victim) IsPodGroup() bool {
-	return len(v.pods) > 0 && v.pods[0].GetPod().Spec.SchedulingGroup != nil
+	return v.keyType == fwk.PodGroupKeyType
+}
+
+// Type returns the type of the preemption unit.
+func (v *victim) Type() fwk.EntityKeyType {
+	return v.keyType
 }
 
 // NewPodVictim creates a new Victim representing a single Pod.
@@ -283,13 +292,17 @@ func (v *victim) IsPodGroup() bool {
 // It ignores the error from NewVictim internally as it is guaranteed to succeed for a single valid pod.
 func NewPodVictim(podInfo fwk.PodInfo, pgLister fwk.PodGroupLister) Victim {
 	priority := GetPodPriority(podInfo.GetPod(), pgLister)
-	vi, _ := NewVictim([]fwk.PodInfo{podInfo}, priority)
+	keyType := fwk.PodKeyType
+	if podInfo.GetPod().Spec.SchedulingGroup != nil && pgLister != nil {
+		keyType = fwk.PodGroupKeyType
+	}
+	vi, _ := NewVictim([]fwk.PodInfo{podInfo}, priority, keyType)
 	return vi
 }
 
 // NewVictim creates a new Victim representing a set of Pods (or a PodGroup) that can be preempted together.
 // It calculates the earliest start time among all provided Pods
-func NewVictim(pods []fwk.PodInfo, priority int32) (Victim, error) {
+func NewVictim(pods []fwk.PodInfo, priority int32, keyType fwk.EntityKeyType) (Victim, error) {
 	if len(pods) == 0 {
 		return nil, fmt.Errorf("no pods provided")
 	}
@@ -306,6 +319,7 @@ func NewVictim(pods []fwk.PodInfo, priority int32) (Victim, error) {
 		priority:          priority,
 		pods:              pods,
 		earliestStartTime: earliest,
+		keyType:           keyType,
 	}, nil
 }
 
@@ -327,7 +341,7 @@ func (dv *DomainVictim) AffectedNodes() map[string]fwk.NodeInfo {
 // newDomainVictim creates a DomainVictim from the given pods and priority.
 // It retrieves the NodeInfo for each pod from the snapshot and stores
 // in the affectedNodes map to represent the nodes affected by evicting these pods.
-func newDomainVictim(snapshot fwk.SharedLister, pods []fwk.PodInfo, priority int32) (*DomainVictim, error) {
+func newDomainVictim(snapshot fwk.SharedLister, pods []fwk.PodInfo, priority int32, keyType fwk.EntityKeyType) (*DomainVictim, error) {
 	nodeSnapshot := snapshot.NodeInfos()
 	nodes := make(map[string]fwk.NodeInfo)
 	for _, pInfo := range pods {
@@ -343,7 +357,7 @@ func newDomainVictim(snapshot fwk.SharedLister, pods []fwk.PodInfo, priority int
 		nodes[nodeName] = nodeInfo
 	}
 
-	victim, err := NewVictim(pods, priority)
+	victim, err := NewVictim(pods, priority, keyType)
 	if err != nil {
 		return nil, err
 	}

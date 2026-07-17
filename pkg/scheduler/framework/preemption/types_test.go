@@ -407,6 +407,7 @@ func TestNewVictim(t *testing.T) {
 		name       string
 		podInfos   []fwk.PodInfo
 		priority   int32
+		keyType    fwk.EntityKeyType
 		wantErr    bool
 		wantVictim *victim
 	}{
@@ -414,6 +415,7 @@ func TestNewVictim(t *testing.T) {
 			name:       "empty pods slice returns error",
 			podInfos:   nil,
 			priority:   10,
+			keyType:    fwk.PodKeyType,
 			wantErr:    true,
 			wantVictim: nil,
 		},
@@ -421,40 +423,46 @@ func TestNewVictim(t *testing.T) {
 			name:     "single pod without scheduling group",
 			podInfos: []fwk.PodInfo{pi1},
 			priority: 20,
+			keyType:  fwk.PodKeyType,
 			wantErr:  false,
 			wantVictim: &victim{
 				priority:          20,
 				earliestStartTime: &now,
 				pods:              []fwk.PodInfo{pi1},
+				keyType:           fwk.PodKeyType,
 			},
 		},
 		{
 			name:     "multiple pods with mixed start times (including nil)",
 			podInfos: []fwk.PodInfo{pi4, pi2, pi3},
 			priority: 30,
+			keyType:  fwk.PodKeyType,
 			wantErr:  false,
 			wantVictim: &victim{
 				priority:          30,
 				earliestStartTime: &earlier,
 				pods:              []fwk.PodInfo{pi4, pi2, pi3},
+				keyType:           fwk.PodKeyType,
 			},
 		},
 		{
 			name:     "pod with scheduling group is identified as pod group",
 			podInfos: []fwk.PodInfo{pi5},
 			priority: 40,
+			keyType:  fwk.PodGroupKeyType,
 			wantErr:  false,
 			wantVictim: &victim{
 				priority:          40,
 				earliestStartTime: &now,
 				pods:              []fwk.PodInfo{pi5},
+				keyType:           fwk.PodGroupKeyType,
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotVictim, err := NewVictim(tt.podInfos, tt.priority)
+			gotVictim, err := NewVictim(tt.podInfos, tt.priority, tt.keyType)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewVictim() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -525,7 +533,7 @@ func TestNewDomainVictim(t *testing.T) {
 				podInfos = append(podInfos, pi)
 			}
 
-			dv, err := newDomainVictim(snapshot, podInfos, tt.priority)
+			dv, err := newDomainVictim(snapshot, podInfos, tt.priority, fwk.PodKeyType)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("newDomainVictim() error = %v, wantErr %v", err, tt.wantErr)
 			}
