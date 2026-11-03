@@ -3829,22 +3829,26 @@ func TestPreEnqueue(t *testing.T) {
 			// Trigger preemption. Given custom PreemptPod implementation, the async preemption will not finish until
 			// finishPreemption is closed.
 			if tt.features.EnableGenericWorkload && tt.podToTriggerPreemption.Spec.SchedulingGroup != nil && tt.pgInfo != nil {
-				var pgSchedulingFunc fwk.PodGroupSchedulingFunc = func(_ context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+				var pgSchedulingFunc fwk.PodGroupSchedulingFunc = func(_ context.Context, innerState fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 					nodeInfo, _ := schedFwk.SnapshotSharedLister().NodeInfos().Get("node1")
 					if len(nodeInfo.GetPods()) == 0 {
 						triggerPodInfo, _ := framework.NewPodInfo(tt.podToTriggerPreemption)
 						checkPodInfo, _ := framework.NewPodInfo(tt.podToCheck)
+						triggerCS := framework.NewCycleState()
+						triggerCS.SetPodGroupCycleState(innerState)
+						checkCS := framework.NewCycleState()
+						checkCS.SetPodGroupCycleState(innerState)
 						return &fwk.PodGroupAssignments{
 							ProposedAssignments: []fwk.ProposedAssignment{
 								&mockProposedAssignment{
 									podInfo:    triggerPodInfo,
 									nodeName:   "node1",
-									cycleState: framework.NewCycleState(),
+									cycleState: triggerCS,
 								},
 								&mockProposedAssignment{
 									podInfo:    checkPodInfo,
 									nodeName:   "node1",
-									cycleState: framework.NewCycleState(),
+									cycleState: checkCS,
 								},
 							},
 						}, fwk.NewStatus(fwk.Success)
@@ -3961,7 +3965,7 @@ func TestDefaultPreemption_PodGroupPostFilter_ErrorWrapping(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			mockSchedulingFunc := func(ctx context.Context, _ fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				return nil, fwk.NewStatus(fwk.Unschedulable)
 			}
 
@@ -4089,7 +4093,7 @@ func TestDefaultPreemption_PodGroupPostFilter_InvalidSnapshot(t *testing.T) {
 			}
 
 			preemptorPods := []*v1.Pod{st.MakePod().Name("p").UID("p").Priority(highPriority).Obj()}
-			mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			mockSchedulingFunc := func(ctx context.Context, _ fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				return nil, fwk.NewStatus(fwk.Unschedulable)
 			}
 
@@ -4160,7 +4164,7 @@ func TestDefaultPreemption_PodGroupPostFilter_CompositePodGroup(t *testing.T) {
 	}
 
 	preemptorPods := []*v1.Pod{st.MakePod().Name("p").UID("p").Priority(highPriority).Obj()}
-	mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+	mockSchedulingFunc := func(ctx context.Context, _ fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 		return nil, nil
 	}
 
@@ -4211,7 +4215,7 @@ type mockPodGroupEvaluator struct {
 	status *fwk.Status
 }
 
-func (m *mockPodGroupEvaluator) Preempt(ctx context.Context, state fwk.PodGroupCycleState, pgInfo fwk.PodGroupInfo, podGroupSchedulingFunc fwk.PodGroupSchedulingFunc) (*fwk.PodGroupPostFilterResult, *fwk.Status) {
+func (m *mockPodGroupEvaluator) Preempt(ctx context.Context, pgInfo fwk.PodGroupInfo, podGroupSchedulingFunc fwk.PodGroupSchedulingFunc) (*fwk.PodGroupPostFilterResult, *fwk.Status) {
 	return nil, m.status
 }
 
@@ -4634,10 +4638,11 @@ func TestDefaultPreemption_PodGroupPostFilter_CustomPreemptionManager(t *testing
 				t.Fatal(err)
 			}
 
-			schedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			schedulingFunc := func(ctx context.Context, innerState fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				var assignments []fwk.ProposedAssignment
 				for _, preemptorPod := range preemptorPods {
 					cs := framework.NewCycleState()
+					cs.SetPodGroupCycleState(innerState)
 					if _, s, _ := schedFwk.RunPreFilterPlugins(ctx, cs, preemptorPod); !s.IsSuccess() {
 						return nil, s
 					}

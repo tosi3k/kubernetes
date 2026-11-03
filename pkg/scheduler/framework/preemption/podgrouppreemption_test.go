@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -54,7 +55,19 @@ import (
 )
 
 type mockFilterPlugin struct {
+	t              *testing.T
+	inReprieve     atomic.Bool
 	nodeCapacities []nodeCapacity
+}
+
+func (m *mockFilterPlugin) assertPreemptionStateCleared(phase string, state fwk.CycleState) {
+	if !m.inReprieve.Load() || m.t == nil {
+		return
+	}
+	m.t.Helper()
+	if ps, err := GetPodGroupPreemptionState(state); err != nil || ps != nil {
+		m.t.Errorf("expected nil PodGroupPreemptionState during reprieve %s, got (%v, %v)", phase, ps, err)
+	}
 }
 
 func getCapacity(pod *v1.Pod) int {
@@ -66,11 +79,11 @@ func getCapacity(pod *v1.Pod) int {
 	return 1
 }
 
-// Filter check whether the pod fits into the node based on the capacity
-// Node capacity is taken from hard coded capacities in plugin
-// Pod size is taken from pod label "size". If the label is not present the
-// size defaults to 1.
+// Filter checks whether the pod fits into the node based on nodeCapacities and pod label "size" (default 1).
+// When inReprieve is set, Filter, Reserve, and Unreserve also assert that PodGroupPreemptionState
+// was cleared from innerState before victim reprieve runs.
 func (m *mockFilterPlugin) Filter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) *fwk.Status {
+	m.assertPreemptionStateCleared("Filter", state)
 	newPodCapacity := getCapacity(pod)
 	nodeCapacity := 0
 	for _, n := range m.nodeCapacities {
@@ -89,6 +102,15 @@ func (m *mockFilterPlugin) Filter(ctx context.Context, state fwk.CycleState, pod
 	return fwk.NewStatus(fwk.Success)
 }
 
+func (m *mockFilterPlugin) Reserve(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeName string) *fwk.Status {
+	m.assertPreemptionStateCleared("Reserve", state)
+	return nil
+}
+
+func (m *mockFilterPlugin) Unreserve(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeName string) {
+	m.assertPreemptionStateCleared("Unreserve", state)
+}
+
 func (m *mockFilterPlugin) Name() string {
 	return "mockFilterPlugin"
 }
@@ -99,6 +121,7 @@ type nodeCapacity struct {
 }
 
 var _ fwk.FilterPlugin = &mockFilterPlugin{}
+var _ fwk.ReservePlugin = &mockFilterPlugin{}
 
 func makePodGroupPreemptor(pg *schedulingv1beta1.PodGroup, pods []*v1.Pod) fwk.PodGroupInfo {
 	return makePodGroupPreemptorWithPreemptionPolicy(pg, pods, v1.PreemptLowerPriority)
@@ -1580,15 +1603,17 @@ func TestPodGroupEvaluator_Preempt_Victims(t *testing.T) {
 			featuregatetesting.SetFeatureGatesDuringTest(t, utilfeature.DefaultFeatureGate, gates)
 			logger, ctx := ktesting.NewTestContext(t)
 
+			mockFilter := &mockFilterPlugin{
+				t:              t,
+				nodeCapacities: tt.nodeCapacities,
+			}
 			mockFilterFactory := func(ctx context.Context, _ runtime.Object, fh fwk.Handle) (fwk.Plugin, error) {
-				return &mockFilterPlugin{
-					nodeCapacities: tt.nodeCapacities,
-				}, nil
+				return mockFilter, nil
 			}
 
 			registeredPlugins := append([]tf.RegisterPluginFunc{
 				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				tf.RegisterPluginAsExtensions("mockFilterPlugin", mockFilterFactory, "Filter")},
+				tf.RegisterPluginAsExtensions("mockFilterPlugin", mockFilterFactory, "Filter", "Reserve")},
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 			var objs []runtime.Object
@@ -1639,7 +1664,20 @@ func TestPodGroupEvaluator_Preempt_Victims(t *testing.T) {
 			// If the number of assigned pods is less than the minCount, it returns Unschedulable
 			// Node capacities are taken from the nodeCapacities slice.
 			// Pod sizes are taken from the "size" label on a pod, defaulting to 1 if the label is not set.
-			var mockSchedulingFunc fwk.PodGroupSchedulingFunc = func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			var capturedInnerState fwk.PodGroupCycleState
+			var mockSchedulingFunc fwk.PodGroupSchedulingFunc = func(ctx context.Context, innerState fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
+				mockFilter.inReprieve.Store(false)
+				defer mockFilter.inReprieve.Store(true)
+				capturedInnerState = innerState
+				if innerState == nil {
+					t.Error("expected non-nil inner PodGroupCycleState")
+				} else {
+					probeState := framework.NewCycleState()
+					probeState.SetPodGroupCycleState(innerState)
+					if ps, err := GetPodGroupPreemptionState(probeState); err != nil || ps == nil {
+						t.Errorf("expected non-nil PodGroupPreemptionState in inner PodGroupCycleState during scheduling pass, got (%v, %v)", ps, err)
+					}
+				}
 				minCount := 1
 				if pg := tt.preemptor.GetPodGroup(); pg != nil {
 					if pg.Spec.SchedulingPolicy.Gang != nil {
@@ -1670,10 +1708,12 @@ func TestPodGroupEvaluator_Preempt_Victims(t *testing.T) {
 						nodeCapacity := tt.nodeCapacities[i].capacity
 						nodeSize := assignedSizes[n.GetName()]
 						if nodeSize+pSize <= nodeCapacity {
+							cs := framework.NewCycleState()
+							cs.SetPodGroupCycleState(innerState)
 							assignments = append(assignments, &mockProposedAssignment{
 								pod:        p,
 								nodeName:   n.GetName(),
-								cycleState: framework.NewCycleState(),
+								cycleState: cs,
 							})
 							assignedSizes[n.GetName()] += pSize
 							nodeIdx = (i + 1) % numNodes
@@ -1699,7 +1739,14 @@ func TestPodGroupEvaluator_Preempt_Victims(t *testing.T) {
 			if err := pl.Handle.MutableSnapshotSharedLister().StartMutations(); err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			res, gotStatus := pl.Preempt(ctx, framework.NewCycleState(), tt.preemptor, mockSchedulingFunc)
+			res, gotStatus := pl.Preempt(ctx, tt.preemptor, mockSchedulingFunc)
+			if capturedInnerState != nil {
+				probeState := framework.NewCycleState()
+				probeState.SetPodGroupCycleState(capturedInnerState)
+				if ps, err := GetPodGroupPreemptionState(probeState); err != nil || ps != nil {
+					t.Errorf("expected PodGroupPreemptionState to be deleted from inner PodGroupCycleState after scheduling pass, got (%v, %v)", ps, err)
+				}
+			}
 			if !gotStatus.IsSuccess() {
 				t.Logf("SelectVictimsOnDomain failed: %v", gotStatus.Message())
 			}
@@ -1782,9 +1829,11 @@ func TestPodGroupEvaluator_Preempt_NominatedNodes(t *testing.T) {
 	informerFactory.StartWithContext(ctx)
 	informerFactory.WaitForCacheSyncWithContext(ctx)
 
-	mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+	mockSchedulingFunc := func(ctx context.Context, innerState fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 		cs1 := framework.NewCycleState()
+		cs1.SetPodGroupCycleState(innerState)
 		cs2 := framework.NewCycleState()
+		cs2.SetPodGroupCycleState(innerState)
 		f.RunPreFilterPlugins(ctx, cs1, p1)
 		f.RunPreFilterPlugins(ctx, cs2, p2)
 		return &fwk.PodGroupAssignments{
@@ -1800,7 +1849,7 @@ func TestPodGroupEvaluator_Preempt_NominatedNodes(t *testing.T) {
 	if err := pl.Handle.MutableSnapshotSharedLister().StartMutations(); err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	result, gotStatus := pl.Preempt(ctx, framework.NewCycleState(), preemptorPGInfo, mockSchedulingFunc)
+	result, gotStatus := pl.Preempt(ctx, preemptorPGInfo, mockSchedulingFunc)
 	if err := pl.Handle.MutableSnapshotSharedLister().EndMutations(); err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1987,7 +2036,7 @@ func TestPodGroupEvaluator_Preempt(t *testing.T) {
 				Handle: f,
 			}
 
-			mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			mockSchedulingFunc := func(ctx context.Context, _ fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				t.Fatal("podGroupSchedulingFunc should not be called when ongoing preemption is detected")
 				return nil, fwk.NewStatus(fwk.Error)
 			}
@@ -1997,7 +2046,7 @@ func TestPodGroupEvaluator_Preempt(t *testing.T) {
 				UnscheduledPods: tt.preemptorPods,
 			}
 
-			gotResult, gotStatus := pl.Preempt(ctx, framework.NewCycleState(), pgInfo, mockSchedulingFunc)
+			gotResult, gotStatus := pl.Preempt(ctx, pgInfo, mockSchedulingFunc)
 			if gotStatus.Code() != tt.expectedStatus.Code() || gotStatus.Message() != tt.expectedStatus.Message() {
 				t.Errorf("Status mismatch. Want status code %v with message %q, Got code %v with message %q",
 					tt.expectedStatus.Code(), tt.expectedStatus.Message(), gotStatus.Code(), gotStatus.Message())
@@ -2124,8 +2173,9 @@ func TestPodGroupPreemptionEvaluationDurationMetric(t *testing.T) {
 				Handle: fh,
 			}
 
-			mockSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			mockSchedulingFunc := func(ctx context.Context, innerState fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				cycleState := framework.NewCycleState()
+				cycleState.SetPodGroupCycleState(innerState)
 				fh.RunPreFilterPlugins(ctx, cycleState, preemptorPod)
 				if tt.evaluationStatus.IsSuccess() {
 					return &fwk.PodGroupAssignments{
@@ -2142,7 +2192,7 @@ func TestPodGroupPreemptionEvaluationDurationMetric(t *testing.T) {
 			if err := pl.Handle.MutableSnapshotSharedLister().StartMutations(); err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			pl.Preempt(ctx, framework.NewCycleState(), preemptorPGInfo, mockSchedulingFunc)
+			pl.Preempt(ctx, preemptorPGInfo, mockSchedulingFunc)
 			if err := pl.Handle.MutableSnapshotSharedLister().EndMutations(); err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}

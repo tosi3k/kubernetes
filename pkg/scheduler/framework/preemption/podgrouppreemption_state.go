@@ -27,8 +27,8 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
-// PodGroupPreemptionStateKey is the PodGroupCycleState key used to store PodGroupPreemptionState.
-const PodGroupPreemptionStateKey fwk.StateKey = "PodGroupPreemptionState"
+// podGroupPreemptionStateKey is the PodGroupCycleState key used to store PodGroupPreemptionState.
+const podGroupPreemptionStateKey fwk.StateKey = "PodGroupPreemptionState"
 
 // PodGroupPreemptionState tracks dynamic victim eviction state across sequential
 // pod scheduling attempts within a single PodGroup preemption evaluation.
@@ -63,7 +63,15 @@ func (s *PodGroupPreemptionState) WriteToPodGroupCycleState(state fwk.PodGroupCy
 	if state == nil {
 		return
 	}
-	state.Write(PodGroupPreemptionStateKey, s)
+	state.Write(podGroupPreemptionStateKey, s)
+}
+
+// DeletePodGroupPreemptionState removes PodGroupPreemptionState from PodGroupCycleState.
+func DeletePodGroupPreemptionState(state fwk.PodGroupCycleState) {
+	if state == nil {
+		return
+	}
+	state.Delete(podGroupPreemptionStateKey)
 }
 
 // GetPodGroupPreemptionState retrieves PodGroupPreemptionState from a pod's CycleState
@@ -74,7 +82,7 @@ func GetPodGroupPreemptionState(state fwk.CycleState) (*PodGroupPreemptionState,
 		return nil, nil
 	}
 	for pgState := state.GetPodGroupCycleState(); pgState != nil; {
-		c, err := pgState.Read(PodGroupPreemptionStateKey)
+		c, err := pgState.Read(podGroupPreemptionStateKey)
 		if err == nil {
 			s, ok := c.(*PodGroupPreemptionState)
 			if !ok {
@@ -83,7 +91,7 @@ func GetPodGroupPreemptionState(state fwk.CycleState) (*PodGroupPreemptionState,
 			return s, nil
 		}
 		if !errors.Is(err, fwk.ErrNotFound) {
-			return nil, fmt.Errorf("error reading %q from podGroupCycleState: %w", PodGroupPreemptionStateKey, err)
+			return nil, fmt.Errorf("error reading %q from podGroupCycleState: %w", podGroupPreemptionStateKey, err)
 		}
 		parentPlacement := pgState.GetParentPlacementCycleState()
 		if parentPlacement == nil {

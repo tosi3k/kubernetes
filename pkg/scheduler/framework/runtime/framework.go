@@ -2624,6 +2624,12 @@ func (f *frameworkImpl) PreemptionManager() fwk.PreemptionManager {
 	return f.preemptionManager
 }
 
+// NewPodGroupCycleState creates an empty root PodGroupCycleState for preparing innerState
+// passed to PodGroupSchedulingFunc in PodGroupPostFilter.
+func (f *frameworkImpl) NewPodGroupCycleState() fwk.PodGroupCycleState {
+	return framework.NewCycleState()
+}
+
 // TotalBatchedPods returns the total number of batched pods. Used only for tests
 func (f *frameworkImpl) TotalBatchedPods() int64 {
 	return f.batch.batchedPods

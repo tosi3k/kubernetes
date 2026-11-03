@@ -602,7 +602,11 @@ type PostFilterPlugin interface {
 }
 
 // PodGroupSchedulingFunc is a function that will be run to check feasibility of a pod group scheduling.
-type PodGroupSchedulingFunc func(ctx context.Context) (*PodGroupAssignments, *Status)
+// innerState is the inner PodGroupCycleState used for this scheduling pass and is mutated in-place by plugins.
+// Callers must pass either nil or a fresh root PodGroupCycleState from Handle.NewPodGroupCycleState() per call;
+// passing the outer PodGroupPostFilter state, a non-root state, or reusing a state returns an Error status.
+// Must not be called concurrently, as evaluation mutates the shared node info snapshot.
+type PodGroupSchedulingFunc func(ctx context.Context, innerState PodGroupCycleState) (*PodGroupAssignments, *Status)
 
 // PodGroupPostFilterResult stores information about nominated nodes for a pod group.
 type PodGroupPostFilterResult struct {
@@ -617,7 +621,8 @@ type PodGroupPostFilterPlugin interface {
 
 	// PodGroupPostFilter is called by the scheduling framework
 	// when the pod group scheduling cycle failed.
-	//
+	// state is the outer PodGroupCycleState from the failed scheduling cycle and must not be passed
+	// to pgSchedulingFunc; pass nil or a fresh state from Handle.NewPodGroupCycleState() instead.
 	//
 	// A PodGroupPostFilter plugin should return one of the following statuses:
 	// - Unschedulable: the plugin gets executed successfully but the PodGroup cannot be made schedulable.
@@ -983,6 +988,11 @@ type Handle interface {
 
 	// PreemptionManager returns PreemptionManager that can be used to customize preemption logic.
 	PreemptionManager() PreemptionManager
+
+	// NewPodGroupCycleState creates an empty root PodGroupCycleState for preparing innerState
+	// passed to PodGroupSchedulingFunc.
+	// Only PodGroupPostFilter extension point should use this.
+	NewPodGroupCycleState() PodGroupCycleState
 }
 
 // PreemptionManager is an interface that allows customization of the preemption logic.

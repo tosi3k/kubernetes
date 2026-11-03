@@ -180,6 +180,7 @@ func TestPodGroupPreemptionState(t *testing.T) {
 		})
 		// Ensure nil PodGroupCycleState is a no-op.
 		rootPreemptionState.WriteToPodGroupCycleState(nil)
+		DeletePodGroupPreemptionState(nil)
 
 		getTests := []struct {
 			name            string
@@ -248,10 +249,23 @@ func TestPodGroupPreemptionState(t *testing.T) {
 				wantDistinct: true,
 			},
 			{
+				name: "DeletePodGroupPreemptionState removes root state",
+				buildCycleState: func() fwk.CycleState {
+					rootPGState := framework.NewCycleState()
+					rootPreemptionState.WriteToPodGroupCycleState(rootPGState)
+					DeletePodGroupPreemptionState(rootPGState)
+
+					podState := framework.NewCycleState()
+					podState.SetPodGroupCycleState(rootPGState)
+					return podState
+				},
+				wantState: nil,
+			},
+			{
 				name: "invalid state type assertion in GetPodGroupPreemptionState returns error",
 				buildCycleState: func() fwk.CycleState {
 					pgState := framework.NewCycleState()
-					pgState.Write(PodGroupPreemptionStateKey, invalidStateData{})
+					pgState.Write(podGroupPreemptionStateKey, invalidStateData{})
 					podState := framework.NewCycleState()
 					podState.SetPodGroupCycleState(pgState)
 					return podState

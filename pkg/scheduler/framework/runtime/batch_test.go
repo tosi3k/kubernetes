@@ -1026,7 +1026,7 @@ func (pl *podGroupPostFilterCallbackPlugin) Name() string {
 }
 
 func (pl *podGroupPostFilterCallbackPlugin) PodGroupPostFilter(ctx context.Context, _ fwk.PodGroupCycleState, _ fwk.PodGroupInfo, pgSchedulingFunc fwk.PodGroupSchedulingFunc) (*fwk.PodGroupPostFilterResult, *fwk.Status) {
-	if _, status := pgSchedulingFunc(ctx); !status.IsSuccess() {
+	if _, status := pgSchedulingFunc(ctx, nil); !status.IsSuccess() {
 		return nil, status
 	}
 	return &fwk.PodGroupPostFilterResult{}, fwk.NewStatus(fwk.Success)
@@ -1092,7 +1092,7 @@ func TestRunPodGroupPostFilterPluginsBatching(t *testing.T) {
 			}
 
 			schedulingFuncCalled := false
-			pgSchedulingFunc := func(ctx context.Context) (*fwk.PodGroupAssignments, *fwk.Status) {
+			pgSchedulingFunc := func(ctx context.Context, _ fwk.PodGroupCycleState) (*fwk.PodGroupAssignments, *fwk.Status) {
 				schedulingFuncCalled = true
 				if opportunisticBatchingEnabled {
 					if !fwkImpl.batch.disabled {
