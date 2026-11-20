@@ -50,7 +50,6 @@ import (
 	internalqueue "k8s.io/kubernetes/pkg/scheduler/backend/queue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/gangscheduling"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -115,7 +114,6 @@ type Scheduler struct {
 	nominatedNodeNameForExpectationEnabled              bool
 	genericWorkloadEnabled                              bool
 	inPlacePodVerticalScalingSchedulerPreemptionEnabled bool
-	podGroupHierarchyTracker                            *gangscheduling.HierarchyTracker
 	// profilesWithoutDeferredPodScheduling can't evaluate deferred pod resizes, so their pods aren't queued for one.
 	profilesWithoutDeferredPodScheduling sets.Set[string]
 
@@ -461,7 +459,6 @@ func New(ctx context.Context,
 		nominatedNodeNameForExpectationEnabled: feature.DefaultFeatureGate.Enabled(features.NominatedNodeNameForExpectation),
 		genericWorkloadEnabled:                 feature.DefaultFeatureGate.Enabled(features.GenericWorkload),
 		inPlacePodVerticalScalingSchedulerPreemptionEnabled: feature.DefaultFeatureGate.Enabled(features.InPlacePodVerticalScalingSchedulerPreemption),
-		podGroupHierarchyTracker:                            comps.podGroupHierarchyTracker,
 		profilesWithoutDeferredPodScheduling:                profilesWithoutDeferredPodScheduling,
 	}
 	if err = sched.initAlgorithms(

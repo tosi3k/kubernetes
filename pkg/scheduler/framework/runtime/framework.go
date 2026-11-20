@@ -108,11 +108,10 @@ type frameworkImpl struct {
 	clientSet                      clientset.Interface
 	kubeConfig                     *restclient.Config
 	eventRecorder                  events.EventRecorderLogger
-	informerFactory                informers.SharedInformerFactory
-	sharedDRAManager               fwk.SharedDRAManager
-	sharedPodGroupHierarchyTracker fwk.PodGroupHierarchyTracker
-	podGroupManager                fwk.PodGroupManager
-	logger                         klog.Logger
+	informerFactory  informers.SharedInformerFactory
+	sharedDRAManager fwk.SharedDRAManager
+	podGroupManager  fwk.PodGroupManager
+	logger           klog.Logger
 
 	sharedCSIManager fwk.CSIManager
 
@@ -179,10 +178,9 @@ type frameworkOptions struct {
 	clientSet                      clientset.Interface
 	kubeConfig                     *restclient.Config
 	eventRecorder                  events.EventRecorderLogger
-	informerFactory                informers.SharedInformerFactory
-	sharedDRAManager               fwk.SharedDRAManager
-	sharedPodGroupHierarchyTracker fwk.PodGroupHierarchyTracker
-	sharedCSIManager               fwk.CSIManager
+	informerFactory  informers.SharedInformerFactory
+	sharedDRAManager fwk.SharedDRAManager
+	sharedCSIManager fwk.CSIManager
 	snapshotSharedLister           fwk.SharedLister
 	mutableSnapshotLister          fwk.MutableSnapshotSharedLister
 	metricsRecorder                *metrics.MetricAsyncRecorder
@@ -246,13 +244,6 @@ func WithInformerFactory(informerFactory informers.SharedInformerFactory) Option
 func WithSharedDRAManager(sharedDRAManager fwk.SharedDRAManager) Option {
 	return func(o *frameworkOptions) {
 		o.sharedDRAManager = sharedDRAManager
-	}
-}
-
-// WithSharedPodGroupHierarchyTracker sets SharedPodGroupHierarchyTracker for the framework.
-func WithSharedPodGroupHierarchyTracker(sharedPodGroupHierarchyTracker fwk.PodGroupHierarchyTracker) Option {
-	return func(o *frameworkOptions) {
-		o.sharedPodGroupHierarchyTracker = sharedPodGroupHierarchyTracker
 	}
 }
 
@@ -409,10 +400,9 @@ func NewFramework(ctx context.Context, r Registry, profile *config.KubeScheduler
 		clientSet:                      options.clientSet,
 		kubeConfig:                     options.kubeConfig,
 		eventRecorder:                  options.eventRecorder,
-		informerFactory:                options.informerFactory,
-		sharedDRAManager:               options.sharedDRAManager,
-		sharedPodGroupHierarchyTracker: options.sharedPodGroupHierarchyTracker,
-		metricsRecorder:                options.metricsRecorder,
+		informerFactory:  options.informerFactory,
+		sharedDRAManager: options.sharedDRAManager,
+		metricsRecorder:  options.metricsRecorder,
 		extenders:                      options.extenders,
 		PodNominator:                   options.podNominator,
 		PodActivator:                   options.podActivator,
@@ -2655,11 +2645,6 @@ func (f *frameworkImpl) SharedInformerFactory() informers.SharedInformerFactory 
 // SharedDRAManager returns the SharedDRAManager of the framework.
 func (f *frameworkImpl) SharedDRAManager() fwk.SharedDRAManager {
 	return f.sharedDRAManager
-}
-
-// SharedPodGroupHierarchyTracker returns the SharedPodGroupHierarchyTracker of the framework.
-func (f *frameworkImpl) SharedPodGroupHierarchyTracker() fwk.PodGroupHierarchyTracker {
-	return f.sharedPodGroupHierarchyTracker
 }
 
 // SharedCSIManager returns the SharedCSIManager of the framework.

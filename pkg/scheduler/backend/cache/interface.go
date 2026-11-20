@@ -157,6 +157,10 @@ type Cache interface {
 	// FindRootGroup returns the root *fwk.GenericPodGroup for the given EntityKey,
 	// or nil if the root group was not found.
 	FindRootGroup(key fwk.EntityKey) (*fwk.GenericPodGroup, error)
+
+	// AddEventHandler registers a synchronous handler for pod-group membership and
+	// (Composite)PodGroup lifecycle changes.
+	AddEventHandler(handler fwk.PodGroupEventHandler)
 }
 
 // Dump is a dump of the cache state.

@@ -29,11 +29,17 @@ import (
 	"k8s.io/klog/v2/ktesting"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/features"
+	internalcache "k8s.io/kubernetes/pkg/scheduler/backend/cache"
 	schedulerframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
+
+func init() {
+	metrics.Register()
+}
 
 func Test_isSchedulableAfterPodAdded(t *testing.T) {
 	tests := []struct {
@@ -141,18 +147,18 @@ func Test_isSchedulableAfterPodAdded(t *testing.T) {
 				})
 				logger, ctx := ktesting.NewTestContext(t)
 
-				ht := NewHierarchyTracker(isCPGEnabled)
+				cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 				for _, pg := range tc.pgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
 				}
 				if isCPGEnabled {
 					for _, cpg := range tc.cpgs {
-						ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+						cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
 					}
 				}
 
 				fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-					frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+					frameworkruntime.WithPodGroupManager(cache),
 				)
 				if err != nil {
 					t.Fatalf("Failed to create framework: %v", err)
@@ -263,21 +269,21 @@ func Test_isSchedulableAfterPodGroupAdded(t *testing.T) {
 				})
 				logger, ctx := ktesting.NewTestContext(t)
 
-				ht := NewHierarchyTracker(isCPGEnabled)
+				cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 				for _, pg := range tc.pgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
 				}
 				if tc.newPodGroup != nil {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(tc.newPodGroup))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(tc.newPodGroup))
 				}
 				if isCPGEnabled {
 					for _, cpg := range tc.cpgs {
-						ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+						cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
 					}
 				}
 
 				fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-					frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+					frameworkruntime.WithPodGroupManager(cache),
 				)
 				if err != nil {
 					t.Fatalf("Failed to create framework: %v", err)
@@ -453,24 +459,24 @@ func Test_isSchedulableAfterPodGroupUpdated(t *testing.T) {
 				})
 				logger, ctx := ktesting.NewTestContext(t)
 
-				ht := NewHierarchyTracker(isCPGEnabled)
+				cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 				for _, pg := range tc.pgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
 				}
 				if isCPGEnabled {
 					for _, cpg := range tc.cpgs {
-						ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+						cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
 					}
 				}
 				if tc.oldPodGroup != nil {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(tc.oldPodGroup))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(tc.oldPodGroup))
 				}
 				if tc.newPodGroup != nil {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(tc.newPodGroup))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(tc.newPodGroup))
 				}
 
 				fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-					frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+					frameworkruntime.WithPodGroupManager(cache),
 				)
 				if err != nil {
 					t.Fatalf("Failed to create framework: %v", err)
@@ -574,19 +580,19 @@ func Test_isSchedulableAfterCompositePodGroupAdded(t *testing.T) {
 				})
 				logger, ctx := ktesting.NewTestContext(t)
 
-				ht := NewHierarchyTracker(isCPGEnabled)
+				cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 				for _, pg := range tc.pgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
 				}
 				for _, cpg := range tc.cpgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+					cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
 				}
 				if tc.newCPG != nil {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(tc.newCPG))
+					cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(tc.newCPG))
 				}
 
 				fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-					frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+					frameworkruntime.WithPodGroupManager(cache),
 				)
 				if err != nil {
 					t.Fatalf("Failed to create framework: %v", err)
@@ -845,9 +851,9 @@ func Test_isSchedulableAfterCompositePodGroupUpdated(t *testing.T) {
 			logger, ctx := ktesting.NewTestContext(t)
 
 			isCPGEnabled := tc.isCompositePodGroupEnabled
-			ht := NewHierarchyTracker(isCPGEnabled)
+			cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 			for _, pg := range tc.pgs {
-				ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+				cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
 			}
 			if isCPGEnabled {
 				cpgs := tc.cpgs
@@ -858,12 +864,12 @@ func Test_isSchedulableAfterCompositePodGroupUpdated(t *testing.T) {
 					cpgs = append(cpgs, newCPG)
 				}
 				for _, cpg := range cpgs {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+					cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
 				}
 			}
 
 			fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-				frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+				frameworkruntime.WithPodGroupManager(cache),
 			)
 			if err != nil {
 				t.Fatalf("Failed to create framework: %v", err)
@@ -1096,35 +1102,35 @@ func TestPreEnqueue(t *testing.T) {
 					features.TopologyAwareWorkloadScheduling: isCPGEnabled,
 					features.CompositePodGroup:               isCPGEnabled,
 				})
-				logger, ctx := ktesting.NewTestContext(t)
-				ht := NewHierarchyTracker(isCPGEnabled)
+				_, ctx := ktesting.NewTestContext(t)
+				cache := internalcache.New(ctx, nil, true, isCPGEnabled)
 				fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
-					frameworkruntime.WithSharedPodGroupHierarchyTracker(ht),
+					frameworkruntime.WithPodGroupManager(cache),
 				)
 				if err != nil {
 					t.Fatalf("Failed to create framework: %v", err)
 				}
-
-				// Populate tracker state for the test case.
-				for _, pg := range tt.initialPodGroups {
-					ht.AddGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
-				}
-				if isCPGEnabled {
-					for _, cpg := range tt.initialCompositePodGroups {
-						ht.AddGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
-					}
-				}
-
-				for _, p := range tt.initialPods {
-					ht.AddPod(logger, p)
-				}
-				ht.AddPod(logger, tt.pod)
 
 				p, err := New(ctx, nil, fh, feature.Features{EnableGenericWorkload: true, EnableCompositePodGroup: isCPGEnabled})
 				if err != nil {
 					t.Fatalf("Failed to create plugin: %v", err)
 				}
 				pl := p.(*GangScheduling)
+
+				// Populate cache after plugin initialization to exercise live event dispatch.
+				for _, pg := range tt.initialPodGroups {
+					cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
+				}
+				if isCPGEnabled {
+					for _, cpg := range tt.initialCompositePodGroups {
+						cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
+					}
+				}
+
+				for _, p := range tt.initialPods {
+					cache.AddPodGroupMember(p)
+				}
+				cache.AddPodGroupMember(tt.pod)
 
 				gotPreEnqueueStatus := pl.PreEnqueue(ctx, tt.pod)
 				if diff := cmp.Diff(tt.wantPreEnqueueStatus, gotPreEnqueueStatus); diff != "" {
@@ -1369,5 +1375,46 @@ func TestPlacementFeasible(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestNewPluginFactory_SharesHierarchyTracker(t *testing.T) {
+	_, ctx := ktesting.NewTestContext(t)
+	cache := internalcache.New(ctx, nil, true, true)
+	fh1, err := frameworkruntime.NewFramework(ctx, nil, nil, frameworkruntime.WithPodGroupManager(cache))
+	if err != nil {
+		t.Fatalf("Failed to create framework 1: %v", err)
+	}
+	fh2, err := frameworkruntime.NewFramework(ctx, nil, nil, frameworkruntime.WithPodGroupManager(cache))
+	if err != nil {
+		t.Fatalf("Failed to create framework 2: %v", err)
+	}
+
+	factory := NewPluginFactory()
+	fts := feature.Features{EnableGenericWorkload: true, EnableCompositePodGroup: true}
+	p1, err := factory(ctx, nil, fh1, fts)
+	if err != nil {
+		t.Fatalf("Failed to create plugin 1: %v", err)
+	}
+	p2, err := factory(ctx, nil, fh2, fts)
+	if err != nil {
+		t.Fatalf("Failed to create plugin 2: %v", err)
+	}
+
+	gs1 := p1.(*GangScheduling)
+	gs2 := p2.(*GangScheduling)
+	if gs1.hierarchyTracker != gs2.hierarchyTracker {
+		t.Fatalf("Expected both profiles to share the same hierarchyTracker instance")
+	}
+
+	pg := st.MakePodGroup().Namespace("default").Name("pg1").MinCount(1).Obj()
+	pod := st.MakePod().Namespace("default").Name("p1").UID("p1").PodGroupName("pg1").Obj()
+	cache.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
+	if s := gs2.PreEnqueue(ctx, pod); s.IsSuccess() {
+		t.Fatalf("Expected PreEnqueue to gate pod before member is added, got %v", s)
+	}
+	cache.AddPodGroupMember(pod)
+	if s := gs2.PreEnqueue(ctx, pod); !s.IsSuccess() {
+		t.Fatalf("Expected PreEnqueue to pass once member is added, got %v", s)
 	}
 }

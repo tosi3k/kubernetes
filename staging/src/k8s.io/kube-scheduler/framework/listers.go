@@ -210,6 +210,68 @@ type CSIManager interface {
 	CSINodes() CSINodeLister
 }
 
+// PodGroupEventHandler receives synchronous notifications when PodGroup membership
+// or (Composite)PodGroup objects change in the scheduler cache.
+// Handlers are invoked synchronously on the event-handling goroutine after the cache
+// applies each mutation and before the scheduling queue runs PreEnqueue or queueing hints.
+// Implementations must be fast, non-blocking, and must not re-enter PodGroupManager
+// methods that acquire its lock.
+type PodGroupEventHandler interface {
+	OnPodAdd(logger klog.Logger, pod *v1.Pod)
+	OnPodUpdate(logger klog.Logger, oldPod, newPod *v1.Pod)
+	OnPodDelete(logger klog.Logger, pod *v1.Pod)
+	OnGenericPodGroupAdd(logger klog.Logger, gpg *GenericPodGroup)
+	OnGenericPodGroupUpdate(logger klog.Logger, gpg *GenericPodGroup)
+	OnGenericPodGroupDelete(logger klog.Logger, gpg *GenericPodGroup)
+}
+
+// PodGroupEventHandlerFuncs is an adaptor to let plugins easily specify as many
+// or as few of the PodGroupEventHandler callbacks as they need.
+type PodGroupEventHandlerFuncs struct {
+	PodAddFunc                func(logger klog.Logger, pod *v1.Pod)
+	PodUpdateFunc             func(logger klog.Logger, oldPod, newPod *v1.Pod)
+	PodDeleteFunc             func(logger klog.Logger, pod *v1.Pod)
+	GenericPodGroupAddFunc    func(logger klog.Logger, gpg *GenericPodGroup)
+	GenericPodGroupUpdateFunc func(logger klog.Logger, gpg *GenericPodGroup)
+	GenericPodGroupDeleteFunc func(logger klog.Logger, gpg *GenericPodGroup)
+}
+
+func (f PodGroupEventHandlerFuncs) OnPodAdd(logger klog.Logger, pod *v1.Pod) {
+	if f.PodAddFunc != nil {
+		f.PodAddFunc(logger, pod)
+	}
+}
+
+func (f PodGroupEventHandlerFuncs) OnPodUpdate(logger klog.Logger, oldPod, newPod *v1.Pod) {
+	if f.PodUpdateFunc != nil {
+		f.PodUpdateFunc(logger, oldPod, newPod)
+	}
+}
+
+func (f PodGroupEventHandlerFuncs) OnPodDelete(logger klog.Logger, pod *v1.Pod) {
+	if f.PodDeleteFunc != nil {
+		f.PodDeleteFunc(logger, pod)
+	}
+}
+
+func (f PodGroupEventHandlerFuncs) OnGenericPodGroupAdd(logger klog.Logger, gpg *GenericPodGroup) {
+	if f.GenericPodGroupAddFunc != nil {
+		f.GenericPodGroupAddFunc(logger, gpg)
+	}
+}
+
+func (f PodGroupEventHandlerFuncs) OnGenericPodGroupUpdate(logger klog.Logger, gpg *GenericPodGroup) {
+	if f.GenericPodGroupUpdateFunc != nil {
+		f.GenericPodGroupUpdateFunc(logger, gpg)
+	}
+}
+
+func (f PodGroupEventHandlerFuncs) OnGenericPodGroupDelete(logger klog.Logger, gpg *GenericPodGroup) {
+	if f.GenericPodGroupDeleteFunc != nil {
+		f.GenericPodGroupDeleteFunc(logger, gpg)
+	}
+}
+
 // PodGroupManager provides an interface for runtime information about pod groups in the scheduler cache.
 type PodGroupManager interface {
 	// PodGroupStates returns the PodGroupStateLister.
@@ -223,6 +285,11 @@ type PodGroupManager interface {
 	// FindRootGroup returns the root *GenericPodGroup for the given EntityKey,
 	// or nil if the root group was not found.
 	FindRootGroup(key EntityKey) (*GenericPodGroup, error)
+	// AddEventHandler registers a synchronous handler for pod-group membership and
+	// (Composite)PodGroup lifecycle changes. Handlers should be registered during
+	// scheduler initialization before informers start; any objects already present
+	// in the cache are replayed to the newly registered handler.
+	AddEventHandler(handler PodGroupEventHandler)
 }
 
 // PodGroupState provides an interface to view the state of a single pod group.
@@ -250,24 +317,4 @@ type PodGroupState interface {
 type CompositePodGroupState interface {
 	// GetChildren returns the keys of child groups.
 	GetChildren() []EntityKey
-}
-
-// RootGroupReadiness holds the resolved root GenericPodGroup and its readiness state.
-type RootGroupReadiness struct {
-	// RootGroup provides unified access to the underlying root PodGroup or CompositePodGroup object.
-	RootGroup *GenericPodGroup
-	// IsReady is true if the number of ready child groups/pods directly under this root group meets the group
-	// scheduling policy's minimum threshold.
-	IsReady bool
-}
-
-// PodGroupHierarchyTracker provides read access to readiness quorum counts aggregated across
-// PodGroup and CompositePodGroup hierarchies.
-type PodGroupHierarchyTracker interface {
-	// FindRootGroupReadiness traverses parent links from key to locate the root GenericPodGroup in the hierarchy.
-	// If the root group is found, it is returned along with information if the number of its children meets its scheduling policy's
-	// minimum threshold. If the root group cannot be resolved (or does not exist), nil is returned without an error.
-	FindRootGroupReadiness(key EntityKey) (*RootGroupReadiness, error)
-	// AreSameHierarchy checks whether two entities belong to the same hierarchy owned by the same root group.
-	AreSameHierarchy(key1, key2 EntityKey) (bool, error)
 }

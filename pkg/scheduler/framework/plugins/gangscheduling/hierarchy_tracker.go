@@ -63,20 +63,26 @@ func (g *hierarchyGroup) readyCount() int {
 	return g.readyChildren
 }
 
-// HierarchyTracker incrementally tracks readiness constraint counts across PodGroup and CompositePodGroup
+// rootGroupReadiness holds the resolved root GenericPodGroup and its readiness state.
+type rootGroupReadiness struct {
+	rootGroup *fwk.GenericPodGroup
+	isReady   bool
+}
+
+// hierarchyTracker incrementally tracks readiness constraint counts across PodGroup and CompositePodGroup
 // hierarchies. Its in-memory index is protected by an RWMutex to allow concurrent PreEnqueue lookups
 // from scheduling worker routines.
-type HierarchyTracker struct {
+type hierarchyTracker struct {
 	lock                     sync.RWMutex
 	compositePodGroupEnabled bool
 	groups                   map[fwk.EntityKey]*hierarchyGroup
 }
 
-var _ fwk.PodGroupHierarchyTracker = &HierarchyTracker{}
+var _ fwk.PodGroupEventHandler = &hierarchyTracker{}
 
-// NewHierarchyTracker returns a new thread-safe HierarchyTracker.
-func NewHierarchyTracker(compositePodGroupEnabled bool) *HierarchyTracker {
-	return &HierarchyTracker{
+// newHierarchyTracker returns a new thread-safe hierarchyTracker.
+func newHierarchyTracker(compositePodGroupEnabled bool) *hierarchyTracker {
+	return &hierarchyTracker{
 		compositePodGroupEnabled: compositePodGroupEnabled,
 		groups:                   make(map[fwk.EntityKey]*hierarchyGroup),
 	}
@@ -86,7 +92,7 @@ func NewHierarchyTracker(compositePodGroupEnabled bool) *HierarchyTracker {
 // If key already identifies the root, the hierarchyGroup corresponding to key is returned.
 // If the root group cannot be resolved (or does not exist), nil is returned without an error.
 // Assumes ht.lock is held.
-func (ht *HierarchyTracker) findRootGroup(key fwk.EntityKey) (*hierarchyGroup, error) {
+func (ht *hierarchyTracker) findRootGroup(key fwk.EntityKey) (*hierarchyGroup, error) {
 	currentKey := key
 	var visited []fwk.EntityKey
 	for {
@@ -107,10 +113,10 @@ func (ht *HierarchyTracker) findRootGroup(key fwk.EntityKey) (*hierarchyGroup, e
 	}
 }
 
-// FindRootGroupReadiness traverses parent links from key to locate the root GenericPodGroup in the hierarchy.
+// findRootGroupReadiness traverses parent links from key to locate the root GenericPodGroup in the hierarchy.
 // If the root group is found, it is returned along with information if the number of its children meets its scheduling policy's
 // minimum threshold. If the root group cannot be resolved (or does not exist), nil is returned without an error.
-func (ht *HierarchyTracker) FindRootGroupReadiness(key fwk.EntityKey) (*fwk.RootGroupReadiness, error) {
+func (ht *hierarchyTracker) findRootGroupReadiness(key fwk.EntityKey) (*rootGroupReadiness, error) {
 	ht.lock.RLock()
 	defer ht.lock.RUnlock()
 
@@ -118,14 +124,14 @@ func (ht *HierarchyTracker) FindRootGroupReadiness(key fwk.EntityKey) (*fwk.Root
 	if err != nil || rootGroup == nil {
 		return nil, err
 	}
-	return &fwk.RootGroupReadiness{
-		RootGroup: rootGroup.genericGroup,
-		IsReady:   ht.isGroupReady(rootGroup),
+	return &rootGroupReadiness{
+		rootGroup: rootGroup.genericGroup,
+		isReady:   ht.isGroupReady(rootGroup),
 	}, nil
 }
 
-// AreSameHierarchy checks whether two entities belong to the same hierarchy owned by the same root group.
-func (ht *HierarchyTracker) AreSameHierarchy(key1, key2 fwk.EntityKey) (bool, error) {
+// areSameHierarchy checks whether two entities belong to the same hierarchy owned by the same root group.
+func (ht *hierarchyTracker) areSameHierarchy(key1, key2 fwk.EntityKey) (bool, error) {
 	ht.lock.RLock()
 	defer ht.lock.RUnlock()
 
@@ -143,7 +149,7 @@ func (ht *HierarchyTracker) AreSameHierarchy(key1, key2 fwk.EntityKey) (bool, er
 // getOrCreateGroup retrieves or initializes a hierarchyGroup. It assumes ht.lock is held.
 // We default minCount to 1 so that out-of-order informer events (e.g. a Pod arriving before its PodGroup)
 // still enforce a baseline quorum until the authoritative policy definition arrives.
-func (ht *HierarchyTracker) getOrCreateGroup(key fwk.EntityKey) *hierarchyGroup {
+func (ht *hierarchyTracker) getOrCreateGroup(key fwk.EntityKey) *hierarchyGroup {
 	group, exists := ht.groups[key]
 	if !exists {
 		group = &hierarchyGroup{
@@ -157,14 +163,14 @@ func (ht *HierarchyTracker) getOrCreateGroup(key fwk.EntityKey) *hierarchyGroup 
 }
 
 // isGroupReady reports whether the group currently satisfies its readiness requirement. It assumes ht.lock is held.
-func (ht *HierarchyTracker) isGroupReady(group *hierarchyGroup) bool {
+func (ht *hierarchyTracker) isGroupReady(group *hierarchyGroup) bool {
 	return group.readyCount() >= group.minCount
 }
 
 // propagateReadinessDelta applies a readiness delta up the group hierarchy. It assumes ht.lock is held.
 // Upward propagation continues only while a parent transitions across its readiness boundary,
 // preventing redundant updates when a group gains or loses members above or below its minCount quorum.
-func (ht *HierarchyTracker) propagateReadinessDelta(logger klog.Logger, parentKey *fwk.EntityKey, delta int) {
+func (ht *hierarchyTracker) propagateReadinessDelta(logger klog.Logger, parentKey *fwk.EntityKey, delta int) {
 	var visited []fwk.EntityKey
 	for parentKey != nil && delta != 0 {
 		if slices.Contains(visited, *parentKey) {
@@ -194,9 +200,9 @@ func (ht *HierarchyTracker) propagateReadinessDelta(logger klog.Logger, parentKe
 	}
 }
 
-// AddPod adds a pod to all pods tracked in its scheduling group.
+// OnPodAdd adds a pod to all pods tracked in its scheduling group.
 // When adding a pod causes its PodGroup to cross its minCount quorum, we propagate +1 readiness to the parent group.
-func (ht *HierarchyTracker) AddPod(logger klog.Logger, pod *v1.Pod) {
+func (ht *hierarchyTracker) OnPodAdd(logger klog.Logger, pod *v1.Pod) {
 	if pod.Spec.SchedulingGroup == nil || pod.Spec.SchedulingGroup.PodGroupName == nil {
 		return
 	}
@@ -207,7 +213,7 @@ func (ht *HierarchyTracker) AddPod(logger klog.Logger, pod *v1.Pod) {
 }
 
 // addPod adds a pod to all pods tracked in its scheduling group. It assumes ht.lock is held.
-func (ht *HierarchyTracker) addPod(logger klog.Logger, pod *v1.Pod) {
+func (ht *hierarchyTracker) addPod(logger klog.Logger, pod *v1.Pod) {
 	key := fwk.PodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	group := ht.getOrCreateGroup(key)
 	if group.allPods.Has(pod.UID) {
@@ -220,8 +226,8 @@ func (ht *HierarchyTracker) addPod(logger klog.Logger, pod *v1.Pod) {
 	}
 }
 
-// UpdatePod handles a pod recreated under the same name, which an informer can collapse into a single update.
-func (ht *HierarchyTracker) UpdatePod(logger klog.Logger, oldPod, newPod *v1.Pod) {
+// OnPodUpdate handles a pod recreated under the same name, which an informer can collapse into a single update.
+func (ht *hierarchyTracker) OnPodUpdate(logger klog.Logger, oldPod, newPod *v1.Pod) {
 	if oldPod.UID == newPod.UID {
 		return
 	}
@@ -241,9 +247,9 @@ func (ht *HierarchyTracker) UpdatePod(logger klog.Logger, oldPod, newPod *v1.Pod
 	}
 }
 
-// DeletePod removes a pod from all pods tracked in its scheduling group.
+// OnPodDelete removes a pod from all pods tracked in its scheduling group.
 // When removing a pod causes its PodGroup to drop below its minCount quorum, we propagate -1 readiness to the parent group.
-func (ht *HierarchyTracker) DeletePod(logger klog.Logger, pod *v1.Pod) {
+func (ht *hierarchyTracker) OnPodDelete(logger klog.Logger, pod *v1.Pod) {
 	if pod.Spec.SchedulingGroup == nil || pod.Spec.SchedulingGroup.PodGroupName == nil {
 		return
 	}
@@ -253,7 +259,7 @@ func (ht *HierarchyTracker) DeletePod(logger klog.Logger, pod *v1.Pod) {
 }
 
 // deletePod removes a pod from all pods tracked in its scheduling group. It assumes ht.lock is held.
-func (ht *HierarchyTracker) deletePod(logger klog.Logger, pod *v1.Pod) {
+func (ht *hierarchyTracker) deletePod(logger klog.Logger, pod *v1.Pod) {
 	key := fwk.PodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
 	group, exists := ht.groups[key]
 	if !exists {
@@ -275,7 +281,7 @@ func (ht *HierarchyTracker) deletePod(logger klog.Logger, pod *v1.Pod) {
 // updateGroupReadiness reconciles a group's minCount quorum and parent linkage. It assumes ht.lock is held.
 // Because child pods or child groups may arrive before their parent PodGroup/CompositePodGroup definition,
 // this method establishes the initial parent link and reconciles readiness transitions, propagating readiness deltas upwards.
-func (ht *HierarchyTracker) updateGroupReadiness(logger klog.Logger, group *hierarchyGroup, parentKey *fwk.EntityKey, minCount int) {
+func (ht *hierarchyTracker) updateGroupReadiness(logger klog.Logger, group *hierarchyGroup, parentKey *fwk.EntityKey, minCount int) {
 	oldParent := group.parentKey
 	wasReady := ht.isGroupReady(group)
 
@@ -307,8 +313,8 @@ func (ht *HierarchyTracker) updateGroupReadiness(logger klog.Logger, group *hier
 	ht.propagateReadinessDelta(logger, parentKey, delta)
 }
 
-// AddGenericPodGroup registers or updates a GenericPodGroup in the hierarchy tracker and updates parent readiness if it is ready.
-func (ht *HierarchyTracker) AddGenericPodGroup(logger klog.Logger, gpg *fwk.GenericPodGroup) {
+// OnGenericPodGroupAdd registers or updates a GenericPodGroup in the hierarchy tracker and updates parent readiness if it is ready.
+func (ht *hierarchyTracker) OnGenericPodGroupAdd(logger klog.Logger, gpg *fwk.GenericPodGroup) {
 	key := gpg.GetKey()
 	minCount := gpg.GetMinCount()
 	var parentKey *fwk.EntityKey
@@ -326,15 +332,15 @@ func (ht *HierarchyTracker) AddGenericPodGroup(logger klog.Logger, gpg *fwk.Gene
 	ht.updateGroupReadiness(logger, group, parentKey, minCount)
 }
 
-// UpdateGenericPodGroup re-evaluates GenericPodGroup readiness and parent linkage when its definition changes.
-func (ht *HierarchyTracker) UpdateGenericPodGroup(logger klog.Logger, gpg *fwk.GenericPodGroup) {
-	ht.AddGenericPodGroup(logger, gpg)
+// OnGenericPodGroupUpdate re-evaluates GenericPodGroup readiness and parent linkage when its definition changes.
+func (ht *hierarchyTracker) OnGenericPodGroupUpdate(logger klog.Logger, gpg *fwk.GenericPodGroup) {
+	ht.OnGenericPodGroupAdd(logger, gpg)
 }
 
-// DeleteGenericPodGroup removes a GenericPodGroup's definition from tracking.
+// OnGenericPodGroupDelete removes a GenericPodGroup's definition from tracking.
 // If the group was ready, its readiness is retracted from its parent. The entry is kept as a placeholder while
 // it still has pods (PodGroup) or ready children (CompositePodGroup), and removed otherwise.
-func (ht *HierarchyTracker) DeleteGenericPodGroup(logger klog.Logger, gpg *fwk.GenericPodGroup) {
+func (ht *hierarchyTracker) OnGenericPodGroupDelete(logger klog.Logger, gpg *fwk.GenericPodGroup) {
 	key := gpg.GetKey()
 	ht.lock.Lock()
 	defer ht.lock.Unlock()

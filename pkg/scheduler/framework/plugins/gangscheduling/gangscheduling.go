@@ -19,6 +19,7 @@ package gangscheduling
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	v1 "k8s.io/api/core/v1"
 	schedulingv1beta1 "k8s.io/api/scheduling/v1beta1"
@@ -40,19 +41,37 @@ const (
 // belonging to a PodGroup with a Gang scheduling policy.
 type GangScheduling struct {
 	isCompositePodGroupEnabled bool
-	hierarchyTracker           fwk.PodGroupHierarchyTracker
+	hierarchyTracker           *hierarchyTracker
 }
 
 var _ fwk.EnqueueExtensions = &GangScheduling{}
 var _ fwk.PreEnqueuePlugin = &GangScheduling{}
 var _ fwk.PlacementFeasiblePlugin = &GangScheduling{}
 
+// NewPluginFactory returns a factory that shares a single hierarchyTracker across
+// all scheduler profiles constructed from the same plugin registry.
+func NewPluginFactory() func(context.Context, runtime.Object, fwk.Handle, feature.Features) (fwk.Plugin, error) {
+	var (
+		once    sync.Once
+		tracker *hierarchyTracker
+	)
+	return func(_ context.Context, _ runtime.Object, fh fwk.Handle, fts feature.Features) (fwk.Plugin, error) {
+		once.Do(func() {
+			tracker = newHierarchyTracker(fts.EnableCompositePodGroup)
+			if pgm := fh.PodGroupManager(); pgm != nil {
+				pgm.AddEventHandler(tracker)
+			}
+		})
+		return &GangScheduling{
+			isCompositePodGroupEnabled: fts.EnableCompositePodGroup,
+			hierarchyTracker:           tracker,
+		}, nil
+	}
+}
+
 // New initializes a new plugin and returns it.
-func New(_ context.Context, _ runtime.Object, fh fwk.Handle, fts feature.Features) (fwk.Plugin, error) {
-	return &GangScheduling{
-		isCompositePodGroupEnabled: fts.EnableCompositePodGroup,
-		hierarchyTracker:           fh.SharedPodGroupHierarchyTracker(),
-	}, nil
+func New(ctx context.Context, obj runtime.Object, fh fwk.Handle, fts feature.Features) (fwk.Plugin, error) {
+	return NewPluginFactory()(ctx, obj, fh, fts)
 }
 
 // Name returns name of the plugin.
@@ -189,7 +208,7 @@ func (pl *GangScheduling) areSameHierarchy(logger klog.Logger, namespace, podGro
 	}
 
 	podGroupKey := fwk.PodGroupKey(namespace, podGroupName)
-	same, err := pl.hierarchyTracker.AreSameHierarchy(podGroupKey, targetKey)
+	same, err := pl.hierarchyTracker.areSameHierarchy(podGroupKey, targetKey)
 	if err != nil {
 		utilruntime.HandleErrorWithLogger(logger, err, "Failed to check if keys are in the same hierarchy", "key1", podGroupKey, "key2", targetKey)
 		return false
@@ -206,20 +225,20 @@ func (pl *GangScheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *fwk.Stat
 	}
 
 	pgKey := fwk.PodGroupKey(pod.Namespace, *pod.Spec.SchedulingGroup.PodGroupName)
-	rootReadiness, err := pl.hierarchyTracker.FindRootGroupReadiness(pgKey)
+	rootReadiness, err := pl.hierarchyTracker.findRootGroupReadiness(pgKey)
 	if err != nil {
 		return fwk.AsStatus(err)
 	}
-	if rootReadiness == nil || rootReadiness.RootGroup == nil {
+	if rootReadiness == nil || rootReadiness.rootGroup == nil {
 		// The pod is unschedulable until its pod group and all parent groups in its hierarchy are created.
 		return fwk.NewStatus(fwk.UnschedulableAndUnresolvable, fmt.Sprintf("pod group %q or one of its composite pod group ancestors has not been created yet", *pod.Spec.SchedulingGroup.PodGroupName))
 	}
 
-	if rootReadiness.IsReady {
+	if rootReadiness.isReady {
 		return nil
 	}
 
-	rootGroup := rootReadiness.RootGroup
+	rootGroup := rootReadiness.rootGroup
 	if rootGroup.IsBasic() {
 		return fwk.NewStatus(fwk.UnschedulableAndUnresolvable, fmt.Sprintf("waiting for %s tree to have at least one ready child group", rootGroup.GetKey()))
 	}

@@ -285,11 +285,11 @@ func TestHierarchyTracker(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(true)
+			tracker := newHierarchyTracker(true)
 			for stepIdx, step := range tt.steps {
 				switch step.op {
 				case opAddPod:
-					tracker.AddPod(logger, step.obj.(*v1.Pod))
+					tracker.OnPodAdd(logger, step.obj.(*v1.Pod))
 				case opUpdatePod:
 					var oldP, newP *v1.Pod
 					if step.oldObj != nil {
@@ -298,15 +298,15 @@ func TestHierarchyTracker(t *testing.T) {
 					if step.obj != nil {
 						newP = step.obj.(*v1.Pod)
 					}
-					tracker.UpdatePod(logger, oldP, newP)
+					tracker.OnPodUpdate(logger, oldP, newP)
 				case opDeletePod:
-					tracker.DeletePod(logger, step.obj.(*v1.Pod))
+					tracker.OnPodDelete(logger, step.obj.(*v1.Pod))
 				case opAddPG, opAddCPG:
-					tracker.AddGenericPodGroup(logger, toGenericPodGroup(step.obj))
+					tracker.OnGenericPodGroupAdd(logger, toGenericPodGroup(step.obj))
 				case opUpdatePG, opUpdateCPG:
-					tracker.UpdateGenericPodGroup(logger, toGenericPodGroup(step.obj))
+					tracker.OnGenericPodGroupUpdate(logger, toGenericPodGroup(step.obj))
 				case opDeletePG, opDeleteCPG:
-					tracker.DeleteGenericPodGroup(logger, toGenericPodGroup(step.obj))
+					tracker.OnGenericPodGroupDelete(logger, toGenericPodGroup(step.obj))
 				default:
 					t.Fatalf("unknown step op %v at step %d", step.op, stepIdx)
 				}
@@ -503,26 +503,26 @@ func TestHierarchyTracker_FindRootGroupReadiness(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(tt.cpgEnabled)
+			tracker := newHierarchyTracker(tt.cpgEnabled)
 			for _, g := range tt.groups {
-				tracker.AddGenericPodGroup(logger, g)
+				tracker.OnGenericPodGroupAdd(logger, g)
 			}
 			for _, pod := range tt.pods {
-				tracker.AddPod(logger, pod)
+				tracker.OnPodAdd(logger, pod)
 			}
 
-			rootReadiness, err := tracker.FindRootGroupReadiness(tt.lookupKey)
+			rootReadiness, err := tracker.findRootGroupReadiness(tt.lookupKey)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if rootReadiness == nil {
 				t.Fatalf("expected non-nil rootReadiness")
 			}
-			if rootReadiness.RootGroup == nil || rootReadiness.RootGroup.GetName() != tt.wantRootName {
+			if rootReadiness.rootGroup == nil || rootReadiness.rootGroup.GetName() != tt.wantRootName {
 				t.Errorf("expected root name %q, got %v", tt.wantRootName, rootReadiness)
 			}
-			if rootReadiness.IsReady != tt.wantIsReady {
-				t.Errorf("expected isReady %v, got %v", tt.wantIsReady, rootReadiness.IsReady)
+			if rootReadiness.isReady != tt.wantIsReady {
+				t.Errorf("expected isReady %v, got %v", tt.wantIsReady, rootReadiness.isReady)
 			}
 		})
 	}
@@ -595,15 +595,15 @@ func TestHierarchyTracker_FindRootGroupReadiness_MissingObjects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(true)
+			tracker := newHierarchyTracker(true)
 			for _, g := range tt.groups {
-				tracker.AddGenericPodGroup(logger, g)
+				tracker.OnGenericPodGroupAdd(logger, g)
 			}
 			for _, pod := range tt.pods {
-				tracker.AddPod(logger, pod)
+				tracker.OnPodAdd(logger, pod)
 			}
 
-			rootReadiness, err := tracker.FindRootGroupReadiness(tt.lookupKey)
+			rootReadiness, err := tracker.findRootGroupReadiness(tt.lookupKey)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -642,12 +642,12 @@ func TestHierarchyTracker_FindRootGroupReadiness_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(true)
+			tracker := newHierarchyTracker(true)
 			for _, g := range tt.groups {
-				tracker.AddGenericPodGroup(logger, g)
+				tracker.OnGenericPodGroupAdd(logger, g)
 			}
 
-			rootReadiness, err := tracker.FindRootGroupReadiness(tt.lookupKey)
+			rootReadiness, err := tracker.findRootGroupReadiness(tt.lookupKey)
 			if err == nil {
 				t.Fatalf("expected error, got nil (rootReadiness: %v)", rootReadiness)
 			}
@@ -733,12 +733,12 @@ func TestHierarchyTracker_AreSameHierarchy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(tt.cpgEnabled)
+			tracker := newHierarchyTracker(tt.cpgEnabled)
 			for _, g := range groups {
-				tracker.AddGenericPodGroup(logger, g)
+				tracker.OnGenericPodGroupAdd(logger, g)
 			}
 
-			got, err := tracker.AreSameHierarchy(tt.key1, tt.key2)
+			got, err := tracker.areSameHierarchy(tt.key1, tt.key2)
 			if err != nil {
 				t.Fatalf("AreSameHierarchy(%v, %v) failed unexpectedly: %v", tt.key1, tt.key2, err)
 			}
@@ -780,12 +780,12 @@ func TestHierarchyTracker_AreSameHierarchy_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
-			tracker := NewHierarchyTracker(true)
+			tracker := newHierarchyTracker(true)
 			for _, g := range groups {
-				tracker.AddGenericPodGroup(logger, g)
+				tracker.OnGenericPodGroupAdd(logger, g)
 			}
 
-			same, err := tracker.AreSameHierarchy(tt.key1, tt.key2)
+			same, err := tracker.areSameHierarchy(tt.key1, tt.key2)
 			if err == nil {
 				t.Fatalf("AreSameHierarchy(%v, %v) expected error, got nil (same: %v)", tt.key1, tt.key2, same)
 			}

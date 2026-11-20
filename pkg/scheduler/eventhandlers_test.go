@@ -58,6 +58,7 @@ import (
 	apicalls "k8s.io/kubernetes/pkg/scheduler/framework/api_calls"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources"
+	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/gangscheduling"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -1529,10 +1530,9 @@ func TestAddPodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.PodGroup, ActionType: fwk.Add})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(false /* CompositePodGroup */),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.addPodGroup(tt.podGroup)
@@ -1607,10 +1607,9 @@ func TestUpdatePodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.PodGroup, ActionType: fwk.Update})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(false /* CompositePodGroup */),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.Cache.AddGenericPodGroup(fwk.NewGenericPodGroup(oldPodGroup))
@@ -1671,10 +1670,9 @@ func TestDeletePodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.PodGroup, ActionType: fwk.Delete})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(false /* CompositePodGroup */),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, false /* CompositePodGroup */),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.Cache.AddGenericPodGroup(fwk.NewGenericPodGroup(podGroup))
@@ -1738,10 +1736,9 @@ func TestAddCompositePodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.CompositePodGroup, ActionType: fwk.Add})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, true),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(true),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, true),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.addCompositePodGroup(tt.cpg)
@@ -1822,10 +1819,9 @@ func TestUpdateCompositePodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.CompositePodGroup, ActionType: fwk.Update})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, true),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(true),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, true),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.Cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(oldCPG))
@@ -1892,10 +1888,9 @@ func TestDeleteCompositePodGroup(t *testing.T) {
 
 			queue, hintTracker := newTestQueueWithQHintTracker(ctx, t, fwk.ClusterEvent{Resource: fwk.CompositePodGroup, ActionType: fwk.Delete})
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, true),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(true),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, true),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			sched.Cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
@@ -2073,10 +2068,9 @@ func TestUpdatePodGroupRecreatedWithDifferentParent(t *testing.T) {
 	newPG.ResourceVersion = "2"
 
 	sched := &Scheduler{
-		Cache:                    internalcache.New(ctx, nil, true, true),
-		SchedulingQueue:          internalqueue.NewTestQueue(ctx, nil),
-		podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(true),
-		logger:                   logger,
+		Cache:           internalcache.New(ctx, nil, true, true),
+		SchedulingQueue: internalqueue.NewTestQueue(ctx, nil),
+		logger:          logger,
 	}
 
 	sched.Cache.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(oldParent))
@@ -2204,10 +2198,9 @@ func TestRecreatedPodGroupQueueingHints(t *testing.T) {
 				internalqueue.WithAPIDispatcher(apiDispatcher),
 			)
 			sched := &Scheduler{
-				Cache:                    internalcache.New(ctx, nil, true, cpgEnabled),
-				SchedulingQueue:          queue,
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(cpgEnabled),
-				logger:                   logger,
+				Cache:           internalcache.New(ctx, nil, true, cpgEnabled),
+				SchedulingQueue: queue,
+				logger:          logger,
 			}
 
 			if tt.resource == fwk.PodGroup {
@@ -2345,9 +2338,18 @@ func TestEventHandlers_DeferredResizePodGroupMember(t *testing.T) {
 					internalqueue.WithPodInitialBackoffDuration(0),
 					internalqueue.WithPodMaxBackoffDuration(0),
 				),
-				podGroupHierarchyTracker: gangscheduling.NewHierarchyTracker(false /* CompositePodGroup */),
-				logger:                   logger,
-				Profiles:                 profile.Map{testSchedulerName: nil},
+				logger:   logger,
+				Profiles: profile.Map{testSchedulerName: nil},
+			}
+			fh, err := frameworkruntime.NewFramework(ctx, nil, nil,
+				frameworkruntime.WithPodGroupManager(sched.Cache),
+			)
+			if err != nil {
+				t.Fatalf("Failed to create framework: %v", err)
+			}
+			gangPl, err := gangscheduling.New(ctx, nil, fh, plfeature.Features{EnableGenericWorkload: true})
+			if err != nil {
+				t.Fatalf("Failed to create GangScheduling plugin: %v", err)
 			}
 
 			sched.addPodGroup(st.MakePodGroup().Namespace("ns1").Name("pg1").MinCount(1).Obj())
@@ -2391,12 +2393,10 @@ func TestEventHandlers_DeferredResizePodGroupMember(t *testing.T) {
 			if inAssigned := pgs.AssignedPods().Has(tt.initialPod.UID); inAssigned != tt.expectMember {
 				t.Errorf("Unexpected pod in AssignedPods of PodGroupState: got %v, want %v", inAssigned, tt.expectMember)
 			}
-			readiness, err := sched.podGroupHierarchyTracker.FindRootGroupReadiness(fwk.PodGroupKey("ns1", "pg1"))
-			if err != nil || readiness == nil {
-				t.Fatalf("Failed to get pod group readiness: readiness=%v, err=%v", readiness, err)
-			}
-			if readiness.IsReady != tt.expectMember {
-				t.Errorf("Unexpected gang readiness with minCount=1: got %v, want %v", readiness.IsReady, tt.expectMember)
+			probePod := st.MakePod().Namespace("ns1").Name("probe").PodGroupName("pg1").Obj()
+			gotReady := gangPl.(fwk.PreEnqueuePlugin).PreEnqueue(ctx, probePod).IsSuccess()
+			if gotReady != tt.expectMember {
+				t.Errorf("Unexpected gang readiness with minCount=1: got %v, want %v", gotReady, tt.expectMember)
 			}
 		})
 	}

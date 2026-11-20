@@ -72,7 +72,7 @@ func NewInTreeRegistry() runtime.Registry {
 		defaultbinder.Name:                   defaultbinder.New,
 		defaultpreemption.Name:               runtime.FactoryAdapter(fts, defaultpreemption.New),
 		schedulinggates.Name:                 runtime.FactoryAdapter(fts, schedulinggates.New),
-		gangscheduling.Name:                  runtime.FactoryAdapter(fts, gangscheduling.New),
+		gangscheduling.Name:                  runtime.FactoryAdapter(fts, gangscheduling.NewPluginFactory()),
 		topologyaware.Name:                   runtime.FactoryAdapter(fts, topologyaware.New),
 		podgrouppodscount.Name:               runtime.FactoryAdapter(fts, podgrouppodscount.New),
 	}

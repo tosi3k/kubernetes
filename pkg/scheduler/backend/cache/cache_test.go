@@ -3786,6 +3786,75 @@ func TestCache_FindRootGroup_Errors(t *testing.T) {
 	}
 }
 
+func TestCache_AddEventHandler(t *testing.T) {
+	logger, ctx := ktesting.NewTestContext(t)
+	c := New(ctx, nil, true, true)
+
+	cpg := st.MakeCompositePodGroup().Namespace("ns1").Name("cpg1").MinGroupCount(1).Obj()
+	pg := st.MakePodGroup().Namespace("ns1").Name("pg1").ParentCompositePodGroup("cpg1").MinCount(1).Obj()
+	prePod := st.MakePod().Namespace("ns1").Name("p-pre").UID("p-pre").PodGroupName("pg1").Obj()
+
+	// Pre-populate cache before registering handler to verify replay.
+	c.AddGenericPodGroup(fwk.NewGenericCompositePodGroup(cpg))
+	c.AddGenericPodGroup(fwk.NewGenericPodGroup(pg))
+	c.AddPodGroupMember(prePod)
+
+	var events []string
+	c.AddEventHandler(fwk.PodGroupEventHandlerFuncs{
+		PodAddFunc: func(_ klog.Logger, pod *v1.Pod) {
+			events = append(events, "pod-add:"+pod.Name)
+		},
+		PodUpdateFunc: func(_ klog.Logger, oldPod, newPod *v1.Pod) {
+			events = append(events, "pod-update:"+string(oldPod.UID)+"->"+string(newPod.UID))
+		},
+		PodDeleteFunc: func(_ klog.Logger, pod *v1.Pod) {
+			events = append(events, "pod-delete:"+pod.Name)
+		},
+		GenericPodGroupAddFunc: func(_ klog.Logger, gpg *fwk.GenericPodGroup) {
+			events = append(events, "group-add:"+gpg.GetKey().String())
+		},
+		GenericPodGroupUpdateFunc: func(_ klog.Logger, gpg *fwk.GenericPodGroup) {
+			events = append(events, "group-update:"+gpg.GetKey().String())
+		},
+		GenericPodGroupDeleteFunc: func(_ klog.Logger, gpg *fwk.GenericPodGroup) {
+			events = append(events, "group-delete:"+gpg.GetKey().String())
+		},
+	})
+
+	// Replay should have delivered cpg1, pg1, and p-pre.
+	wantReplay := []string{
+		"group-add:compositepodgroup/ns1/cpg1",
+		"group-add:podgroup/ns1/pg1",
+		"pod-add:p-pre",
+	}
+	if diff := cmp.Diff(wantReplay, events); diff != "" {
+		t.Fatalf("unexpected replay events (-want,+got):\n%s", diff)
+	}
+	events = nil
+
+	// Exercise live pod and group lifecycle mutations.
+	livePod := st.MakePod().Namespace("ns1").Name("p-live").UID("p-live").PodGroupName("pg1").Obj()
+	livePod2 := st.MakePod().Namespace("ns1").Name("p-live").UID("p-live-2").PodGroupName("pg1").Obj()
+	c.AddPodGroupMember(livePod)
+	c.UpdatePodGroupMember(logger, livePod, livePod2)
+	c.RemovePodGroupMember(livePod2)
+	c.UpdateGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+	c.RemoveGenericPodGroup(logger, fwk.NewGenericPodGroup(pg))
+	c.RemoveGenericPodGroup(logger, fwk.NewGenericCompositePodGroup(cpg))
+
+	wantLive := []string{
+		"pod-add:p-live",
+		"pod-update:p-live->p-live-2",
+		"pod-delete:p-live",
+		"group-update:podgroup/ns1/pg1",
+		"group-delete:podgroup/ns1/pg1",
+		"group-delete:compositepodgroup/ns1/cpg1",
+	}
+	if diff := cmp.Diff(wantLive, events); diff != "" {
+		t.Fatalf("unexpected live events (-want,+got):\n%s", diff)
+	}
+}
+
 func TestCache_HavePodsWithRequiredNonHostScopedAntiAffinity(t *testing.T) {
 	testCases := []struct {
 		name                            string

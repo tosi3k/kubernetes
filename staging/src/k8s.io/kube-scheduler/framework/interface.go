@@ -1000,9 +1000,6 @@ type Handle interface {
 	// PodGroupManager provides an interface for runtime information about pod groups from scheduler's cache.
 	PodGroupManager() PodGroupManager
 
-	// SharedPodGroupHierarchyTracker returns the PodGroupHierarchyTracker of the framework.
-	SharedPodGroupHierarchyTracker() PodGroupHierarchyTracker
-
 	// SignPod creates a PodSignature for a pod.
 	SignPod(ctx context.Context, pod *v1.Pod) PodSignature
 
